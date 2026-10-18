@@ -1,3 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.deb binary
+spotify.ipa filter=lfs diff=lfs merge=lfs -text
