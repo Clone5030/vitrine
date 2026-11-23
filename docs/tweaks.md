@@ -648,8 +648,8 @@ Redesigned:
                   language Everything else covers them all; Album.h lists its files). A podcast's episode page is the same template, so it is given the same field, and what it
                   paints over it is taken off. Laid out on the Mac against harness/album/
     Artist/       the artist page on the same field and header (Artist.h lists its files), its Music / Video / Merch
-                  strip gone so the Music list is the page, and off that list its videos (on until switched off) and,
-                  off until switched on, the Artist pick, the Release Countdown and About
+                  strip and the videos in its Music list kept unless switched off (each off until switched on) and,
+                  likewise off until switched on, the Artist pick, the Release Countdown and About
                   (spotifyglass.redesign.artist.hide.pick, .countdown, .about). Each is told apart by the identifier
                   its content carries in any language (Components.UI.PinnedItemUI, Components.UI.UpcomingReleaseRow,
                   Components.UI.CreatorBiographyCard; strings of the 9.1.78 and 9.1.90 binaries) and dropped with its

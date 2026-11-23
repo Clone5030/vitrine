@@ -235,7 +235,7 @@ static void logOnce(NSString *what) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
-    hidden[SGRArtistCellVideos] = SGEnabled(SGRKeyArtistHideVideos);
+    hidden[SGRArtistCellVideos] = SGHidden(SGRKeyArtistHideVideos);
     hidden[SGRArtistCellPick] = SGHidden(SGRKeyArtistHidePick);
     hidden[SGRArtistCellCountdown] = SGHidden(SGRKeyArtistHideCountdown);
     hidden[SGRArtistCellAbout] = SGHidden(SGRKeyArtistHideAbout);
