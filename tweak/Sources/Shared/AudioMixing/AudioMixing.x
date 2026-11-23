@@ -4,37 +4,53 @@
 #import "Core/SGCore.h"
 #import "AudioMixing.h"
 
-static AVAudioSessionCategoryOptions mixedOptions(AVAudioSessionCategory category,
-                                                    AVAudioSessionCategoryOptions options) {
-    if (SGEnabled(SGKeyAudioMixing) && [category isEqualToString:AVAudioSessionCategoryPlayback]) {
-        if (!(options & AVAudioSessionCategoryOptionMixWithOthers)) {
-            options |= AVAudioSessionCategoryOptionMixWithOthers;
-            SGLog(@"audio mixing: added Mix With Others to Spotify playback session");
-        }
+static AVAudioSessionCategoryOptions SGAudioMixingOptions(AVAudioSessionCategory category,
+                                                           AVAudioSessionCategoryOptions options) {
+    if (SGEnabled(SGKeyAudioMixing) &&
+        [category isEqualToString:AVAudioSessionCategoryPlayback]) {
+        options |= AVAudioSessionCategoryOptionMixWithOthers;
     }
     return options;
 }
 
 %hook AVAudioSession
+
+// Older category setter.
+- (BOOL)setCategory:(AVAudioSessionCategory)category error:(NSError **)outError {
+    if (SGEnabled(SGKeyAudioMixing) &&
+        [category isEqualToString:AVAudioSessionCategoryPlayback]) {
+        return %orig(category, outError) ? [self setCategory:category
+                                                 withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                                                       error:outError] : NO;
+    }
+    return %orig(category, outError);
+}
+
+// Category + options setter.
+- (BOOL)setCategory:(AVAudioSessionCategory)category
+        withOptions:(AVAudioSessionCategoryOptions)options
+              error:(NSError **)outError {
+    return %orig(category, SGAudioMixingOptions(category, options), outError);
+}
+
+// Category + mode + options setter.
 - (BOOL)setCategory:(AVAudioSessionCategory)category
                mode:(AVAudioSessionMode)mode
             options:(AVAudioSessionCategoryOptions)options
               error:(NSError **)outError {
-    return %orig(category, mode, mixedOptions(category, options), outError);
+    return %orig(category, mode, SGAudioMixingOptions(category, options), outError);
 }
 
+// Modern category + mode + route-sharing-policy + options setter.
+// Spotify or an Apple framework may use this overload instead of the simpler setters.
 - (BOOL)setCategory:(AVAudioSessionCategory)category
-        withOptions:(AVAudioSessionCategoryOptions)options
+               mode:(AVAudioSessionMode)mode
+             policy:(AVAudioSessionRouteSharingPolicy)policy
+            options:(AVAudioSessionCategoryOptions)options
               error:(NSError **)outError {
-    return %orig(category, mixedOptions(category, options), outError);
+    return %orig(category, mode, policy, SGAudioMixingOptions(category, options), outError);
 }
 
-- (BOOL)setCategory:(AVAudioSessionCategory)category error:(NSError **)outError {
-    if (SGEnabled(SGKeyAudioMixing) && [category isEqualToString:AVAudioSessionCategoryPlayback]) {
-        return [self setCategory:category withOptions:AVAudioSessionCategoryOptionMixWithOthers error:outError];
-    }
-    return %orig(category, outError);
-}
 %end
 
 %ctor {
