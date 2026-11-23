@@ -167,7 +167,7 @@ static UIImage *singGlyph(void) {
         case SGSingStateSinging: tint = SGRAccentColor() ?: UIColor.systemGreenColor; break;
         case SGSingStateBehind: glyph = @"tortoise.fill"; break;
         case SGSingStateHot: glyph = @"thermometer.high"; tint = UIColor.systemOrangeColor; break;
-        case SGSingStateFailed: glyph = @"exclamationmark.triangle.fill"; tint = UIColor.systemRed; break;
+        case SGSingStateFailed: glyph = @"exclamationmark.triangle.fill"; tint = UIColor.systemRedColor; break;
     }
     // One glyph replaces the other in place, as the Kit's download glyph does (none under Reduce Motion),
     // and the color crossfades. Set only on a change: the download's progress refreshes many times a second.
