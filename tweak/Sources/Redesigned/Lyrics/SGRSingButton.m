@@ -30,8 +30,8 @@ static UIColor *ink(void) {
 static UIImage *singGlyph(void) {
     static UIImage *image;
     if (image) return image;
-    CGSize size = CGSizeMake(32, 40);
-    UIImage *mic = [UIImage systemImageNamed:@"mic.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightSemibold]];
+    CGSize size = CGSizeMake(28, 40);
+    UIImage *mic = [UIImage systemImageNamed:@"mic.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightSemibold]];
     UIImage *big = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:10 weight:UIImageSymbolWeightBold]];
     UIImage *small = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:7 weight:UIImageSymbolWeightBold]];
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size];
@@ -403,7 +403,8 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
 // The slider sits outside the button's bounds, above it, and takes touches while it shows.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     if (_panelShown && CGRectContainsPoint(_panel.frame, point)) return YES;
-    return [super pointInside:point withEvent:event];
+    // The capsule is skinnier than a fingertip wants, so its touch reaches a little past both sides.
+    return CGRectContainsPoint(CGRectInset(self.bounds, -5, 0), point);
 }
 
 @end
