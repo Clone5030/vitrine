@@ -48,7 +48,9 @@ static AVAudioSessionCategoryOptions SGAudioMixingOptions(AVAudioSessionCategory
  routeSharingPolicy:(AVAudioSessionRouteSharingPolicy)policy
             options:(AVAudioSessionCategoryOptions)options
               error:(NSError **)outError {
-    return %orig(category, mode, policy, SGAudioMixingOptions(category, options), outError);
+    AVAudioSessionCategoryOptions adjusted = policy == AVAudioSessionRouteSharingPolicyDefault
+        ? SGAudioMixingOptions(category, options) : options;
+    return %orig(category, mode, policy, adjusted, outError);
 }
 
 %end
