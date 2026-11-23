@@ -7,6 +7,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Pages.h"
 #import "Shared/ArtistBlock/ArtistBlock.h"
+#import "Shared/AudioMixing/AudioMixing.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsMeanings/Meanings.h"
@@ -161,6 +162,10 @@ UIViewController *SGPlayerSettingsPage(void) {
     [sections addObject:SGSection(native ? nil : @"Hide on the player", @[
         SGHideRow(@"Switch to video", @"The chip over the title of a song with a music video", SGKeyHideVideoSwitch),
     ])];
+
+    [sections addObject:SGNotedSection(@"Audio mixing", @[
+        SGOptionRow(@"Mix with other apps", @"Let Spotify audio coexist with other apps where iOS permits it", SGKeyAudioMixing),
+    ], @"Restart Spotify after changing. This adds Apple's Mix With Others option to Spotify's playback audio session. Apps that request exclusive audio can still interrupt playback.")];
 
     [sections addObject:SGNotedSection(@"Lossless", @[
         SGOptionRow(@"Lossless files", @"Your own FLACs in place of Spotify's stream", SGKeyLossless),
