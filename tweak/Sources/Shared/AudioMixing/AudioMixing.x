@@ -19,9 +19,9 @@ static AVAudioSessionCategoryOptions SGAudioMixingOptions(AVAudioSessionCategory
 - (BOOL)setCategory:(AVAudioSessionCategory)category error:(NSError **)outError {
     if (SGEnabled(SGKeyAudioMixing) &&
         [category isEqualToString:AVAudioSessionCategoryPlayback]) {
-        return %orig(category, outError) ? [self setCategory:category
-                                                 withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                                                       error:outError] : NO;
+        return [self setCategory:category
+                    withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                          error:outError];
     }
     return %orig(category, outError);
 }
