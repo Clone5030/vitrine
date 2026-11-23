@@ -45,7 +45,7 @@ static AVAudioSessionCategoryOptions SGAudioMixingOptions(AVAudioSessionCategory
 // Spotify or an Apple framework may use this overload instead of the simpler setters.
 - (BOOL)setCategory:(AVAudioSessionCategory)category
                mode:(AVAudioSessionMode)mode
-             policy:(AVAudioSessionRouteSharingPolicy)policy
+ routeSharingPolicy:(AVAudioSessionRouteSharingPolicy)policy
             options:(AVAudioSessionCategoryOptions)options
               error:(NSError **)outError {
     return %orig(category, mode, policy, SGAudioMixingOptions(category, options), outError);
