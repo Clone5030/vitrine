@@ -18,9 +18,39 @@ static const float kLevelStep = 0.05f;
 // Sing page's tall slider ticks there.
 static const float kAsSungCatch = 0.08f;
 static const CGFloat kMarkWidth = 14;
-static char kButtonGlassKey, kPanelGlassKey;
+static char kPanelGlassKey;
+// The button is a tall white capsule with a dark mic and sparkles on it, as Apple Music's Sing button is, so its
+// glyphs are dark. The mic and the sparkles are drawn once into one template image, so the button's tint colors them.
+static const CGFloat kPillMicTilt = 40;   // degrees clockwise: the mic's head leans to the upper right
+
+static UIColor *ink(void) {
+    return [UIColor colorWithWhite:0.1 alpha:1];
+}
+
+static UIImage *singGlyph(void) {
+    static UIImage *image;
+    if (image) return image;
+    CGSize size = CGSizeMake(32, 40);
+    UIImage *mic = [UIImage systemImageNamed:@"mic.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightSemibold]];
+    UIImage *big = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:10 weight:UIImageSymbolWeightBold]];
+    UIImage *small = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:7 weight:UIImageSymbolWeightBold]];
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size];
+    UIImage *drawn = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        CGContextRef c = context.CGContext;
+        CGContextSaveGState(c);
+        CGContextTranslateCTM(c, size.width / 2, size.height / 2 + 1);
+        CGContextRotateCTM(c, kPillMicTilt * M_PI / 180);
+        [[mic imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(-mic.size.width / 2, -mic.size.height / 2, mic.size.width, mic.size.height)];
+        CGContextRestoreGState(c);
+        [[big imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(0, 2, big.size.width, big.size.height)];
+        [[small imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(size.width - small.size.width - 1, size.height - small.size.height - 3, small.size.width, small.size.height)];
+    }];
+    image = [drawn imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    return image;
+}
 
 @implementation SGRSingButton {
+    UIView *_pill;       // the white capsule behind the glyph; not glass, so it fades by its alpha
     UIButton *_button;   // holds no glass, so its alpha is free to fade
     CAShapeLayer *_ring;
     BOOL _ringShown;
@@ -37,13 +67,18 @@ static char kButtonGlassKey, kPanelGlassKey;
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    // The Kit's glass behind a plain button (layoutSubviews), the same material as the pronunciation and
-    // translation button across from it, so the glass can be faded by its effect when the controls go.
+    // A white capsule behind a plain button (layoutSubviews), which fades by its alpha when the controls go.
+    _pill = [UIView new];
+    _pill.backgroundColor = UIColor.whiteColor;
+    _pill.layer.cornerCurve = kCACornerCurveContinuous;
+    _pill.userInteractionEnabled = NO;
+    [self addSubview:_pill];
     UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
     config.preferredSymbolConfigurationForImage = [UIImageSymbolConfiguration configurationWithPointSize:kGlyph weight:UIImageSymbolWeightSemibold];
     _button = [UIButton buttonWithConfiguration:config primaryAction:nil];
-    _button.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    _button.tintColor = UIColor.whiteColor;
+    // Light, so the glyph's dark ink reads on the white capsule whatever the system's appearance is.
+    _button.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    _button.tintColor = ink();
     _button.isAccessibilityElement = NO;
     [_button addTarget:self action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
     [_button addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
@@ -58,7 +93,7 @@ static char kButtonGlassKey, kPanelGlassKey;
 
     _ring = [CAShapeLayer layer];
     _ring.fillColor = UIColor.clearColor.CGColor;
-    _ring.strokeColor = UIColor.whiteColor.CGColor;
+    _ring.strokeColor = ink().CGColor;
     _ring.lineWidth = kRingWidth;
     _ring.lineCap = kCALineCapRound;
     _ring.opacity = 0;
@@ -79,20 +114,22 @@ static char kButtonGlassKey, kPanelGlassKey;
     [super layoutSubviews];
     CGRect bounds = self.bounds;
     _button.frame = bounds;
-    SGRShowGlass(SGRGlassInside(self, &kButtonGlassKey, MIN(bounds.size.width, bounds.size.height)), !_tucked);
+    _pill.frame = bounds;
+    _pill.layer.cornerRadius = MIN(bounds.size.width, bounds.size.height) / 2;
     _ring.frame = bounds;
-    // Starting at the top and running clockwise, as a download ring does.
+    // A circle in the middle of the capsule, as wide as the capsule: it turns about its centre, which a
+    // capsule-shaped ring could not. Starting at the top and running clockwise, as a download ring does.
     CGFloat radius = MIN(bounds.size.width, bounds.size.height) / 2 - kRingInset - kRingWidth / 2;
     _ring.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds)) radius:radius
                                             startAngle:-M_PI_2 endAngle:3 * M_PI_2 clockwise:YES].CGPath;
     if (_panel) SGRShowGlass([self placePanel], _panelShown);
 }
 
-// Goes with the host's controls, in the host's animation: the glass dematerializes, the glyph and the ring
-// fade, and an open slider goes with them.
+// Goes with the host's controls, in the host's animation: the capsule, the glyph and the ring fade, and an open
+// slider goes with them.
 - (void)setTucked:(BOOL)tucked {
     _tucked = tucked;
-    SGRShowGlass(SGRGlassInside(self, &kButtonGlassKey, MIN(self.bounds.size.width, self.bounds.size.height)), !tucked);
+    _pill.alpha = tucked ? 0 : 1;
     _button.alpha = tucked ? 0 : 1;
     [self showRing];
     self.userInteractionEnabled = !tucked;
@@ -103,13 +140,15 @@ static char kButtonGlassKey, kPanelGlassKey;
 
 - (void)refresh {
     SGSingState state = SGSingCurrentState();
+    // "mic.fill" stands for the capsule's own glyph, the tilted mic with its sparkles (singGlyph); the other
+    // states keep a plain symbol that says what they are.
     NSString *glyph = @"mic.fill";
-    UIColor *tint = UIColor.whiteColor;
+    UIColor *tint = ink();
     CGFloat alpha = 1;
     double progress = -1;   // a ring at a fraction; 2 for a turning one, -1 for none
     switch (state) {
         case SGSingStateUnavailable: glyph = @"mic.slash"; alpha = 0.5; break;
-        case SGSingStateNoModel: glyph = @"mic"; alpha = 0.7; break;
+        case SGSingStateNoModel: alpha = 0.7; break;
         case SGSingStateDownloading:
             // Offline, the ring stays where the download stopped and the glyph says why, dimmed like the other
             // states that wait.
@@ -121,14 +160,14 @@ static char kButtonGlassKey, kPanelGlassKey;
             }
             progress = SGSingModelProgress();
             break;
-        case SGSingStateOff: glyph = @"mic"; break;
+        case SGSingStateOff: alpha = 0.55; break;
         case SGSingStatePreparing:
         case SGSingStateBuffering: progress = 2; break;
         case SGSingStateWaiting: alpha = 0.7; break;
         case SGSingStateSinging: tint = SGRAccentColor() ?: UIColor.systemGreenColor; break;
         case SGSingStateBehind: glyph = @"tortoise.fill"; break;
         case SGSingStateHot: glyph = @"thermometer.high"; tint = UIColor.systemOrangeColor; break;
-        case SGSingStateFailed: glyph = @"exclamationmark.triangle.fill"; tint = UIColor.systemYellowColor; break;
+        case SGSingStateFailed: glyph = @"exclamationmark.triangle.fill"; tint = UIColor.systemRed; break;
     }
     // One glyph replaces the other in place, as the Kit's download glyph does (none under Reduce Motion),
     // and the color crossfades. Set only on a change: the download's progress refreshes many times a second.
@@ -139,7 +178,7 @@ static char kButtonGlassKey, kPanelGlassKey;
             config.symbolContentTransition = SGRReduceMotion() || !self.window ? nil
                 : [UISymbolContentTransition transitionWithContentTransition:[NSSymbolReplaceContentTransition replaceDownUpTransition]];
         }
-        config.image = [UIImage systemImageNamed:glyph];
+        config.image = [glyph isEqualToString:@"mic.fill"] ? singGlyph() : [UIImage systemImageNamed:glyph];
         _button.configuration = config;
     }
     UIColor *color = [tint colorWithAlphaComponent:alpha];
