@@ -292,7 +292,9 @@ BOOL SGCoverClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
         AVVideoCodecKey: AVVideoCodecTypeH264,
         AVVideoWidthKey: @(size.width),
         AVVideoHeightKey: @(size.height),
-        AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(1500000), AVVideoMaxKeyFrameIntervalKey: @(fps)},
+        // A still at a low bitrate comes out blocky; this is one picture at a high one, in the High profile.
+        AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(16000000), AVVideoMaxKeyFrameIntervalKey: @(fps),
+                                           AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel},
     }];
     AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
         sourcePixelBufferAttributes:@{

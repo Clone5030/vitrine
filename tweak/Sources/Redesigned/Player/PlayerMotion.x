@@ -51,7 +51,7 @@ static const CGFloat kFootRows = 0.03;
 // (issues #40 and #57: drawn to the window's height it lost two fifths of its width).
 static const CGFloat kCanvasAspect = 1.5;
 // A still cover (Full-screen cover) is filled into a box this much taller than wide.
-static const CGFloat kStillAspect = 1.25;
+static const CGFloat kStillAspect = 1.25, kStillFadeFrom = 0.75;
 // The blur starts at the seam, or this share of the screen down where that is higher, so it is under the
 // controls whatever the clip's shape; it is whole kBlurRamp points below its start.
 static const CGFloat kBlurByControls = 0.6, kBlurRamp = 96;
@@ -237,7 +237,8 @@ static UIBlurEffect *blurEffect(void) {
     // A still cover is drawn a quarter taller than wide, filled, its foot melting into its own color.
     if (_fills) height = round(width * kStillAspect);
     if (_aspect > kCanvasAspect) height = MAX(height, screen);
-    CGFloat seam = round(height * kFootFrom), blurFrom = MIN(seam, round(screen * kBlurByControls));
+    // A still cover's foot starts where its fade does, so no edge shows between them.
+    CGFloat seam = round(height * (_fills ? kStillFadeFrom : kFootFrom)), blurFrom = MIN(seam, round(screen * kBlurByControls));
     _picture.frame = bounds;
     _seamBlur.frame = bounds;
     _seamBlur.maskView.frame = bounds;
@@ -270,9 +271,23 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)playStill:(UIImage *)cover {
     _fills = YES;
-    _clipMask.locations = @[@0, @0.75, @1];
+    _clipMask.locations = @[@0, @(kStillFadeFrom), @1];
     _aspect = cover.size.height / cover.size.width;
     _foot.backgroundColor = footColor(cover.CGImage).CGColor;
+    // The foot is the cover's own lower part, drawn tiny and stretched, so its colors run on from the picture
+    // (its left as warm as the cover's left) rather than one flat gray, and dimmed for the words over it.
+    CGSize tiny = CGSizeMake(24, 24);
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    BOOL bright = SGFlag(SGRKeyPlayerFullBrightness, NO);
+    UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:tiny format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [cover drawInRect:CGRectMake(0, 0, tiny.width, tiny.height)];
+        [[UIColor colorWithWhite:0 alpha:bright ? 0.2 : 0.45] setFill];
+        UIRectFillUsingBlendMode(CGRectMake(0, 0, tiny.width, tiny.height), kCGBlendModeNormal);
+    }];
+    _foot.contents = (__bridge id)small.CGImage;
+    _foot.contentsRect = CGRectMake(0, 0.6, 1, 0.4);
+    _foot.magnificationFilter = kCAFilterLinear;
     _still.contents = (__bridge id)cover.CGImage;
     [self setNeedsLayout];
     _luminances = [NSMutableData data];
@@ -314,6 +329,8 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)updateDim {
     CGFloat dim = SGRPlayerClipDim(brightEnd(_luminances), UIAccessibilityDarkerSystemColorsEnabled(), _lyricsUp);
+    // Full-brightness covers leave the picture as it is; the lyrics keep the darkening they need.
+    if (SGFlag(SGRKeyPlayerFullBrightness, NO) && !_lyricsUp) dim = 0;
     _dim.opacity = (float)dim;
 }
 
@@ -322,7 +339,8 @@ static UIBlurEffect *blurEffect(void) {
     _picture.alpha = 0;
     void (^apply)(void) = ^{
         self->_picture.alpha = 1;
-        self->_seamBlur.effect = blurEffect();
+        // A still cover's foot is its own colors, which the blur's gray would wash out.
+        self->_seamBlur.effect = self->_fills ? nil : blurEffect();
     };
     if (animated) {
         SGRAnimate(SGRMotionFade, apply, ^(BOOL finished) {
@@ -611,15 +629,29 @@ static BOOL fullCoverOn(void) {
 // Where the still cover shown is the track's, and how wide it is, so a sharper one replaces it and the same one does not.
 static NSString *sg_stillFor;   // the track waiting for its cover to come in
 static CGFloat sg_stillWidth;
+static __weak UIImage *sg_stillImage;   // the picture the still on screen was drawn from
 
 // Full-screen cover: the playing track's cover over the whole player where it has no clip. The cover is the one
 // the player published; until that is this track's, the track waits for the notice that it has come.
-static void showStill(NSString *track) {
+static void showStill(NSString *track, BOOL force) {
     if (!fullCoverOn() || ![track isEqualToString:sg_track]) return;
     NSString *of = nil;
     UIImage *picture = SGRNowPlayingArtwork(&of, NULL);
-    if (!picture || picture.size.width <= 0 || picture.size.height <= 0 || (of && ![of isEqualToString:track])) {
+    // The picture already on screen is this track's too (the next song of an album): the still stays, and is its.
+    if (picture && picture == sg_stillImage && sg_motion && !sg_motionFile) {
+        sg_shown = track;
+        sg_stillFor = nil;
+        return;
+    }
+    if (!picture || picture.size.width <= 0 || picture.size.height <= 0 || (of && ![of isEqualToString:track] && !force)) {
         sg_stillFor = track;
+        // A song on the same album as the last keeps that cover and never publishes it again, so it still names
+        // the last song: after a moment, the picture there is the one.
+        if (picture) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if ([sg_stillFor isEqualToString:track]) showStill(track, YES);
+            });
+        }
         return;
     }
     sg_stillFor = nil;
@@ -629,6 +661,7 @@ static void showStill(NSString *track) {
     sg_motion = [[SGRPlayerMotionView alloc] initWithFrame:CGRectZero];
     sg_shown = track;
     sg_stillWidth = picture.size.width;
+    sg_stillImage = picture;
     SGRPlayerMotionView *motion = sg_motion;
     [motion playStill:picture];
     layOut();
@@ -705,14 +738,16 @@ static BOOL beginTrack(NSString *track) {
         if (!wanted && animatedBackground && fullCoverOn()) {
             if ([track isEqualToString:sg_shown] && !sg_motionFile) return NO;
             clear(YES);
-            showStill(track);
+            showStill(track, NO);
             return NO;
         }
         clear(YES);
         return wanted;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kHandOver * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([track isEqualToString:sg_track] && sg_motion && ![track isEqualToString:sg_shown]) clear(YES);
+        // A still cover stays for the next song's, which crosses over it, rather than showing the square cover between.
+        BOOL still = fullCoverOn() && !sg_motionFile;
+        if ([track isEqualToString:sg_track] && sg_motion && ![track isEqualToString:sg_shown] && !still) clear(YES);
     });
     return YES;
 }
@@ -799,14 +834,14 @@ void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSString *track = sg_stillFor ?: sg_shown;
             if (!track || sg_motionFile || ![track isEqualToString:sg_track]) return;
-            if (sg_stillFor || sg_motion) showStill(track);
+            if (sg_stillFor || sg_motion) showStill(track, NO);
         });
     }];
     sg_follower = [[SGMotionFollower alloc] initWithBegin:^BOOL(NSString *uri, SPTPlayerState *state) {
         return beginTrack(uri);
     } found:^(NSString *uri, NSURL *file) {
         if (file) show(uri, file);
-        else if (fullCoverOn() && SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing()) showStill(uri);
+        else if (fullCoverOn() && SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing()) showStill(uri, NO);
         else clear(YES);
     }];
     %init(SGRVideoSurfaces);

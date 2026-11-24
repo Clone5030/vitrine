@@ -33,6 +33,8 @@ static const CGFloat kSide = 32, kCoverGap = 16, kControlSide = 44, kColumnShare
 // The title and the controls beside the cover of a track without lines.
 static const CGFloat kBareInfoWidth = 300, kBareControlsWidth = 200;
 static const NSTimeInterval kLandscapeRest = 4;
+// The seek line over the panel's foot: its height with the times under it.
+static const CGFloat kSeekHeight = 40;
 
 // The animated artwork's panel: its share of the screen's width, where its right edge starts to melt into the field,
 // and how far the pinch goes either way.
@@ -190,6 +192,11 @@ static BOOL sg_shut;
     UITapGestureRecognizer *_finish;
     BOOL _adjusting;
     BOOL _clipReady;   // the poster is in and the clip plays
+    // The seek line, with the panel: the track, how far it has played, and the two times.
+    UIView *_seek, *_seekTrack, *_seekFill;
+    UILabel *_elapsed, *_remaining;
+    BOOL _scrubbing;
+    CFTimeInterval _heldUntil;   // a seek just made is shown until the player's report has caught up
 }
 
 // Portrait once the screen is on its way out, or the scene could not turn back while it fades.
@@ -293,6 +300,8 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     _controls.alignment = UIStackViewAlignmentCenter;
     [self.view addSubview:_controls];
 
+    [self addSeek];
+
     _stage = [UIView new];
     [self.view addSubview:_stage];
     _lyrics = [[SGRKaraokeView alloc] initWithFrame:CGRectZero];
@@ -302,6 +311,7 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     _lyrics.browsingBegan = ^{ [weakSelf rest]; };
 
     _hide = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(rest)];
+    _hide.delegate = self;
     [self.view addGestureRecognizer:_hide];
     _shield = [[UIView alloc] initWithFrame:self.view.bounds];
     _shield.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -324,6 +334,108 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_rest invalidate];
     [_clipView stop];
+}
+
+#pragma mark - the seek line
+
+static NSString *clock(double seconds) {
+    NSInteger whole = MAX(0, (NSInteger)llround(seconds));
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)(whole / 60), (long)(whole % 60)];
+}
+
+// A line to jump about the song with, as the player's slider is: a tap goes there, a drag moves along it, and
+// the song seeks when the finger lets go. The times are under it. It follows the player a few times a second.
+- (void)addSeek {
+    _seek = [UIView new];
+    _seek.hidden = YES;
+    _seekTrack = [UIView new];
+    _seekTrack.backgroundColor = [UIColor colorWithWhite:1 alpha:0.28];
+    _seekTrack.clipsToBounds = YES;
+    _seekTrack.userInteractionEnabled = NO;
+    _seekFill = [UIView new];
+    _seekFill.backgroundColor = UIColor.whiteColor;
+    [_seekTrack addSubview:_seekFill];
+    [_seek addSubview:_seekTrack];
+    for (UILabel *label in @[_elapsed = [UILabel new], _remaining = [UILabel new]]) {
+        label.font = SGRMonospacedDigitsFont([UIFont systemFontOfSize:12 weight:UIFontWeightMedium]);
+        label.textColor = [UIColor colorWithWhite:1 alpha:0.6];
+        label.userInteractionEnabled = NO;
+        [_seek addSubview:label];
+    }
+    _remaining.textAlignment = NSTextAlignmentRight;
+    _seek.isAccessibilityElement = YES;
+    _seek.accessibilityLabel = @"Position";
+    [_seek addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(scrubbed:)]];
+    [_seek addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(seekTapped:)]];
+    [self.view addSubview:_seek];
+    __weak SGRLandscapeLyricsController *weakSelf = self;
+    [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+        SGRLandscapeLyricsController *strongSelf = weakSelf;
+        if (!strongSelf) [timer invalidate];
+        else [strongSelf updateSeek];
+    }];
+}
+
+- (void)layoutSeek {
+    CGFloat width = _seek.bounds.size.width;
+    _seekTrack.frame = CGRectMake(0, 8, width, 4);
+    _seekTrack.layer.cornerRadius = 2;
+    _elapsed.frame = CGRectMake(0, 20, width / 2, 16);
+    _remaining.frame = CGRectMake(width / 2, 20, width / 2, 16);
+    [self updateSeek];
+}
+
+// Where the song is, or where a finger holds the line.
+- (void)updateSeek {
+    if (_seek.hidden || _scrubbing || CACurrentMediaTime() < _heldUntil) return;
+    SPTPlayerState *state = SGPlayerState();
+    double duration = state.duration, position = MIN(MAX(0, state.position), duration);
+    [self showSeekShare:duration > 0 ? position / duration : 0 of:duration];
+}
+
+- (void)showSeekShare:(double)share of:(double)duration {
+    share = MIN(1, MAX(0, share));
+    _seekFill.frame = CGRectMake(0, 0, round(_seekTrack.bounds.size.width * share), _seekTrack.bounds.size.height);
+    _elapsed.text = clock(share * duration);
+    _remaining.text = [@"-" stringByAppendingString:clock((1 - share) * duration)];
+    _seek.accessibilityValue = [NSString stringWithFormat:@"%@ of %@", clock(share * duration), clock(duration)];
+}
+
+- (double)seekShareAt:(CGPoint)point {
+    return _seek.bounds.size.width > 0 ? MIN(1, MAX(0, point.x / _seek.bounds.size.width)) : 0;
+}
+
+- (void)seekToShare:(double)share {
+    double duration = SGPlayerState().duration;
+    if (duration <= 0) return;
+    [self.player seekTo:share * duration];
+    _heldUntil = CACurrentMediaTime() + 0.8;
+    [self showSeekShare:share of:duration];
+    [self restartRest];
+}
+
+- (void)seekTapped:(UITapGestureRecognizer *)tap {
+    if (tap.state == UIGestureRecognizerStateEnded) [self seekToShare:[self seekShareAt:[tap locationInView:_seek]]];
+}
+
+- (void)scrubbed:(UIPanGestureRecognizer *)pan {
+    double share = [self seekShareAt:[pan locationInView:_seek]], duration = SGPlayerState().duration;
+    switch (pan.state) {
+        case UIGestureRecognizerStateBegan:
+        case UIGestureRecognizerStateChanged:
+            _scrubbing = YES;
+            [_rest invalidate];
+            _rest = nil;
+            [self showSeekShare:share of:duration];
+            break;
+        case UIGestureRecognizerStateEnded:
+            _scrubbing = NO;
+            [self seekToShare:share];
+            break;
+        default:
+            _scrubbing = NO;
+            break;
+    }
 }
 
 #pragma mark - animated artwork
@@ -384,6 +496,11 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
         recognizer.delegate = self;
         [_panel addGestureRecognizer:recognizer];
     }
+}
+
+// A touch on the seek line is its own: it must not also put the controls away.
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    return gesture != _hide || ![touch.view isDescendantOfView:_seek];
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
@@ -505,6 +622,7 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
     _lyrics.frame = _stage.bounds;
     BOOL panel = [self clipShown];
     _panel.hidden = !panel;
+    _seek.hidden = !panel;
     _cover.alpha = panel ? 0 : 1;
     if (panel) {
         // The panel from the screen's left edge to its middle, whatever the safe area; the text and the controls
@@ -525,6 +643,14 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
         _title.frame = CGRectMake(left, textTop + (textHeight - titleHeight - artistHeight) / 2, inner - kControlSide, titleHeight);
         _artist.frame = CGRectMake(left, CGRectGetMaxY(_title.frame), inner - kControlSide, artistHeight);
         _controls.frame = CGRectMake(left + inner * 0.1, controlsTop, inner * 0.8, controlsHeight);
+        // The seek line between the words and the controls; the words move up to make room.
+        CGFloat seekTop = controlsTop - kSeekHeight - 6;
+        textTop -= kSeekHeight + 6;
+        _close.frame = CGRectMake(left + inner - kControlSide + 12, textTop + (textHeight - kControlSide) / 2, kControlSide, kControlSide);
+        _title.frame = CGRectMake(left, textTop + (textHeight - titleHeight - artistHeight) / 2, inner - kControlSide, titleHeight);
+        _artist.frame = CGRectMake(left, CGRectGetMaxY(_title.frame), inner - kControlSide, artistHeight);
+        _seek.frame = CGRectMake(left, seekTop, inner, kSeekHeight);
+        [self layoutSeek];
         linesLeft = width + kSide;
         _stage.frame = CGRectMake(linesLeft, CGRectGetMinY(safe), CGRectGetMaxX(safe) - linesLeft, safe.size.height);
         _lyrics.frame = _stage.bounds;
@@ -679,7 +805,7 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
     // Back at a tap with the Kit's response, from where a fade out is; they go with the slow fade, as the
     // portrait player's do (PlayerLyrics.x).
     SGRAnimate(shown ? SGRMotionRespond : SGRMotionFade, ^{
-        for (UIView *view in @[self->_controls, self->_close, self->_title, self->_artist]) view.alpha = shown ? 1 : 0;
+        for (UIView *view in @[self->_controls, self->_close, self->_title, self->_artist, self->_seek]) view.alpha = shown ? 1 : 0;
         self->_lyrics.extrasHidden = !shown;
     }, nil);
     if (shown) [self restartRest];

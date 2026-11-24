@@ -110,6 +110,9 @@ static inline Class SGRDJClass(NSString *name) {
 // On until switched off. Placed by the footer's layout, between the controls (`controls`) and the footer row
 // (`row`), both arranged in Spotify's bottom stack, `margin` in from each side.
 #define SGRKeyPlayerVolume @"spotifyglass.redesign.player.volume"
+// Off until switched on: the clip and the full-screen cover are drawn without the dark layer that keeps white text
+// readable over a bright one (PlayerMotion.x). The lyrics' own darkening stays.
+#define SGRKeyPlayerFullBrightness @"spotifyglass.redesign.player.fullbrightness"
 BOOL SGRPlayerVolumeOn(void);
 // YES when the row shows; NO when it is off, has no controls to sit under or no room between them and the footer.
 BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat margin);

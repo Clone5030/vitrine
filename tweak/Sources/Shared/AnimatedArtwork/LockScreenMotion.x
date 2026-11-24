@@ -134,7 +134,7 @@ static void withCover(NSString *title, void (^then)(CGImageRef cover)) {
         NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
         MPMediaItemArtwork *artwork = info[MPMediaItemPropertyArtwork];
         UIImage *cover = [info[MPMediaItemPropertyTitle] isEqual:title] && [artwork isKindOfClass:MPMediaItemArtwork.class]
-            ? [artwork imageWithSize:CGSizeMake(600, 600)] : nil;
+            ? [artwork imageWithSize:CGSizeMake(1200, 1200)] : nil;
         dispatch_async(sg_queue, ^{ then(cover.CGImage); });
     });
 }
@@ -180,9 +180,11 @@ static void showCover(NSString *picture) {
 API_AVAILABLE(ios(26.0))
 static void showFullCover(NSString *picture) {
     if (![MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys containsObject:MPNowPlayingInfoProperty3x4AnimatedArtwork]) return;
-    NSURL *file = SGMotionMadeFile([@"still\n" stringByAppendingString:picture]);
+    // The v2 in the name is the sharper clip: one written before it, at the smaller size, is not reused.
+    NSURL *file = SGMotionMadeFile([@"still2\n" stringByAppendingString:picture]);
     NSString *title = sg_title;
-    CGSize size = SGLyricsClipSize(SGMotionPixels());
+    // The screen's own pixels across: a still at three quarters of them, drawn on it a third larger, was soft.
+    CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
     MPMediaItemAnimatedArtwork *artwork = [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:file.lastPathComponent
         previewImageRequestHandler:^(CGSize wanted, void (^completion)(UIImage *)) {
             withCover(title, ^(CGImageRef cover) {
