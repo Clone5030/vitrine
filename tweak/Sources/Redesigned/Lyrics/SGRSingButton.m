@@ -70,7 +70,11 @@ static UIImage *singGlyph(void) {
     // A circle with a mic. A tap grows it into a pill that a finger drags up and down to set the mix; no glass,
     // so everything fades by its alpha when the controls go.
     _track = [UIView new];
-    _track.backgroundColor = [UIColor colorWithWhite:0.26 alpha:0.92];
+    // Open, a glass pill in the screen's own colors: the track a light tint over them with a fine edge, the level
+    // a lighter fill in it, and the mic white. Closed, the fill is the white circle and the mic dark on it.
+    _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.2];
+    _track.layer.borderWidth = 1;
+    _track.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.3].CGColor;
     _track.layer.cornerCurve = kCACornerCurveContinuous;
     _track.userInteractionEnabled = NO;
     _track.alpha = 0;
@@ -214,10 +218,13 @@ static UIImage *singGlyph(void) {
     void (^change)(void) = ^{
         self->_track.alpha = open ? 1 : 0;
         self->_level.alpha = open ? 1 : 0;
+        self->_fill.backgroundColor = open ? [UIColor colorWithWhite:1 alpha:0.45] : UIColor.whiteColor;
+        self->_ring.strokeColor = (open ? UIColor.whiteColor : ink()).CGColor;
         [self applyShape];
     };
     if (animated) SGRAnimate(open ? SGRMotionPress : SGRMotionLayout, change, nil);
     else [UIView performWithoutAnimation:change];
+    [self refresh];   // the mic's color: white on the glass, dark on the white circle
     if (open) [self letGo];
 }
 
@@ -245,7 +252,7 @@ static UIImage *singGlyph(void) {
     // "mic.fill" stands for the circle's own glyph, the tilted mic with its sparkles (singGlyph); the other
     // states keep a plain symbol that says what they are.
     NSString *glyph = @"mic.fill";
-    UIColor *tint = ink();
+    UIColor *tint = _open ? UIColor.whiteColor : ink();
     CGFloat alpha = 1;
     double progress = -1;   // a ring at a fraction; 2 for a turning one, -1 for none
     switch (state) {

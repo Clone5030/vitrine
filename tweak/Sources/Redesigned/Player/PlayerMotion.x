@@ -51,7 +51,7 @@ static const CGFloat kFootRows = 0.03;
 // (issues #40 and #57: drawn to the window's height it lost two fifths of its width).
 static const CGFloat kCanvasAspect = 1.5;
 // A still cover (Full-screen cover) is filled into a box this much taller than wide.
-static const CGFloat kStillAspect = 1.25, kStillFadeFrom = 0.75;
+static const CGFloat kStillAspect = 1.25, kStillFadeFrom = 0.78;
 // The blur starts at the seam, or this share of the screen down where that is higher, so it is under the
 // controls whatever the clip's shape; it is whole kBlurRamp points below its start.
 static const CGFloat kBlurByControls = 0.6, kBlurRamp = 96;
@@ -271,23 +271,21 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)playStill:(UIImage *)cover {
     _fills = YES;
-    _clipMask.locations = @[@0, @(kStillFadeFrom), @1];
     _aspect = cover.size.height / cover.size.width;
     _foot.backgroundColor = footColor(cover.CGImage).CGColor;
-    // The foot is the cover's own lower part, drawn tiny and stretched, so its colors run on from the picture
-    // (its left as warm as the cover's left) rather than one flat gray, and dimmed for the words over it.
-    CGSize tiny = CGSizeMake(24, 24);
-    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
-    format.scale = 1;
-    BOOL bright = SGFlag(SGRKeyPlayerFullBrightness, NO);
-    UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:tiny format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        [cover drawInRect:CGRectMake(0, 0, tiny.width, tiny.height)];
-        [[UIColor colorWithWhite:0 alpha:bright ? 0.2 : 0.45] setFill];
-        UIRectFillUsingBlendMode(CGRectMake(0, 0, tiny.width, tiny.height), kCGBlendModeNormal);
-    }];
-    _foot.contents = (__bridge id)small.CGImage;
-    _foot.contentsRect = CGRectMake(0, 0.6, 1, 0.4);
-    _foot.magnificationFilter = kCAFilterLinear;
+    // The cover ends in a deep shade of its own color, as the Music app's does: its foot is the cover's, taken
+    // from its lower part and darkened (less so with Full-brightness covers), and the picture fades into it by
+    // an eased ramp rather than a straight one, so no edge shows where the fade begins.
+    CGFloat shade = SGFlag(SGRKeyPlayerFullBrightness, NO) ? 0.6 : 0.34;
+    CGFloat r = 0, g = 0, b = 0, alpha = 1;
+    UIColor *mean = [UIColor colorWithCGColor:_foot.backgroundColor];
+    if ([mean getRed:&r green:&g blue:&b alpha:&alpha]) {
+        _foot.backgroundColor = [UIColor colorWithRed:r * shade green:g * shade blue:b * shade alpha:1].CGColor;
+    }
+    _clipMask.colors = @[(id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor,
+                         (id)[UIColor colorWithWhite:0 alpha:0.72].CGColor, (id)[UIColor colorWithWhite:0 alpha:0.3].CGColor,
+                         (id)UIColor.clearColor.CGColor];
+    _clipMask.locations = @[@0, @(kStillFadeFrom), @(kStillFadeFrom + 0.09), @(kStillFadeFrom + 0.16), @1];
     _still.contents = (__bridge id)cover.CGImage;
     [self setNeedsLayout];
     _luminances = [NSMutableData data];

@@ -72,6 +72,7 @@ static void saveAdjustment(NSURL *file, CGFloat zoom, CGFloat x, CGFloat y) {
 @interface SGRLandscapeClip : UIView
 @property (nonatomic) CGFloat zoom, x, y;
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster;
+- (void)showStill:(UIImage *)cover;
 - (void)setPlaying:(BOOL)playing;
 - (void)stop;
 @end
@@ -108,6 +109,17 @@ static void saveAdjustment(NSURL *file, CGFloat zoom, CGFloat x, CGFloat y) {
     _player.preventsDisplaySleepDuringVideoPlayback = NO;
     _looper = [AVPlayerLooper playerLooperWithPlayer:_player templateItem:[AVPlayerItem playerItemWithURL:file]];
     _video.player = _player;
+    [self setNeedsLayout];
+}
+
+// A cover with no clip: the same fill, held, and not adjustable (the zoom and the move are the clip's).
+- (void)showStill:(UIImage *)cover {
+    [self stop];
+    _natural = cover.size;
+    _still.contents = (__bridge id)cover.CGImage;
+    _zoom = 1;
+    _x = 0;
+    _y = 0;
     [self setNeedsLayout];
 }
 
@@ -192,6 +204,7 @@ static BOOL sg_shut;
     UITapGestureRecognizer *_finish;
     BOOL _adjusting;
     BOOL _clipReady;   // the poster is in and the clip plays
+    BOOL _stillReady;  // no clip, and the cover is in the panel
     // The seek line, with the panel: the track, how far it has played, and the two times.
     UIView *_seek, *_seekTrack, *_seekFill;
     UILabel *_elapsed, *_remaining;
@@ -278,6 +291,7 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     _cover.layer.cornerCurve = kCACornerCurveContinuous;
     _cover.image = art;
     [self.view addSubview:_cover];
+    [self showStillCover:art];
 
     // A title or artist too long for the column scrolls, as the player's own do.
     _title = [SGMarqueeLabel new];
@@ -517,6 +531,8 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
     _clipReady = NO;
     if (!file) {
         [_clipView stop];
+        _stillReady = NO;
+        [self showStillCover:SGRNowPlayingArtwork(NULL, NULL)];
         [self.view setNeedsLayout];
         return;
     }
@@ -538,7 +554,7 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
 }
 
 - (BOOL)clipShown {
-    return _clipFile && _clipReady && !_bare;
+    return !_bare && (_clipReady || _stillReady);
 }
 
 - (void)updateClipPlaying {
@@ -547,7 +563,7 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
 }
 
 - (void)pressed:(UILongPressGestureRecognizer *)press {
-    if (press.state != UIGestureRecognizerStateBegan || _adjusting || ![self clipShown]) return;
+    if (press.state != UIGestureRecognizerStateBegan || _adjusting || !_clipReady || _bare) return;
     if (!CGRectContainsPoint(_panel.bounds, [press locationInView:_panel])) return;
     [[UIImpactFeedbackGenerator new] impactOccurred];
     [self setAdjusting:YES];
@@ -691,10 +707,20 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
     } completion:nil];
 }
 
+// A track without animated artwork has its cover in the panel too, filled and blended into the field as the
+// clip is: automatic, with nothing to adjust.
+- (void)showStillCover:(UIImage *)art {
+    if (!art || _clipReady) return;
+    [_clipView showStill:art];
+    _stillReady = YES;
+    [self.view setNeedsLayout];
+}
+
 - (void)artworkChanged {
     NSString *identity = nil;
     UIImage *art = SGRNowPlayingArtwork(NULL, &identity);
     if (!art) return;
+    [self showStillCover:art];
     // On the field's clock, so the cover and the colors behind it change as one.
     UIImageView *cover = _cover;
     [UIView transitionWithView:cover duration:SGRCrossfade options:UIViewAnimationOptionTransitionCrossDissolve
