@@ -126,6 +126,11 @@ void SGRPlayerPaintCover(UIView *stack);
 // until switched off. Shown or put away by hand for the harness.
 #define SGRKeyLyricsLandscape @"spotifyglass.redesign.lyrics.landscape"
 void SGRPlayerShowLandscape(BOOL show);
+// The clip the portrait player is playing for the track (PlayerMotion.x), nil while it has none or shows a still
+// cover; posted, object nil, when that changes, always on the main queue after the change has settled. The
+// landscape screen plays the same file in its own view and keeps its own adjustment per file.
+extern NSNotificationName const SGRPlayerMotionDidChangeNotification;
+NSURL *SGRPlayerMotionClip(void);
 // The playing track's lines came in, or turned out to be none: the landscape screen lays out for it.
 void SGRPlayerLandscapeLinesChanged(void);
 

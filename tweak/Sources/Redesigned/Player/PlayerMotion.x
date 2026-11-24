@@ -575,12 +575,26 @@ static BOOL seen(UIView *view) {
 }
 
 // The clip fades out over the cover coming back where the player is seen, and goes at once where not.
+NSNotificationName const SGRPlayerMotionDidChangeNotification = @"spotifyglass.redesign.player.motion.changed";
+
+NSURL *SGRPlayerMotionClip(void) {
+    return sg_motionFile;
+}
+
+// Coalesced to the end of the turn: a clip replaced by the next one is cleared and shown in the same pass.
+static void motionChanged(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerMotionDidChangeNotification object:nil];
+    });
+}
+
 static void clear(BOOL animated) {
     SGRPlayerMotionView *old = sg_motion;
     sg_motion = nil;
     sg_shown = nil;
     sg_motionFile = nil;
     sg_motionPoster = nil;
+    motionChanged();
     // Uncovered before the clip starts to fade, so the field is there under it.
     cover(NO);
     holdField();
@@ -646,6 +660,7 @@ static void show(NSString *track, NSURL *file) {
         [sg_motion playFile:file poster:poster];
         sg_motionFile = file;
         sg_motionPoster = poster;
+        motionChanged();
         layOut();
         holdField();
         [sg_motion setBlurred:SGRPlayerLyricsOpen() animated:NO];
