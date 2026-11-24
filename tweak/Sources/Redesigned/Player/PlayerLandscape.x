@@ -443,8 +443,11 @@ static UIView *pillView(UIView *content, UIEdgeInsets insets) {
     _resetPill.userInteractionEnabled = adjusting;
     [_rest invalidate];
     _rest = nil;
-    if (adjusting) [self setControlsShown:YES];
-    else {
+    if (adjusting) {
+        // Over the lines, which reach under Reset.
+        for (UIView *view in @[_adjustFrame, _hint, _resetPill]) [self.view bringSubviewToFront:view];
+        [self setControlsShown:YES];
+    } else {
         saveAdjustment(_clipFile, _clipView.zoom, _clipView.x, _clipView.y);
         [self restartRest];
     }
