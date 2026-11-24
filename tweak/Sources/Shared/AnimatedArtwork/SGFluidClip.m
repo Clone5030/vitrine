@@ -240,15 +240,15 @@ CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
     CGFloat side = size.width, drawnHeight = side * height / MAX(width, 1);
     CGRect frame = CGRectMake(0, size.height - round(size.height * kStillTop) - drawnHeight, side, drawnHeight);
     CGColorSpaceRef gray = CGColorSpaceCreateWithName(kCGColorSpaceGenericGray);
-    CGContextRef maskContext = CGBitmapContextCreate(NULL, (size_t)size.width, (size_t)size.height, 8, 0, gray, kCGImageAlphaNone);
+    CGContextRef maskContext = CGBitmapContextCreate(NULL, (size_t)size.width, (size_t)size.height, 8, 0, gray, (CGBitmapInfo)kCGImageAlphaNone);
     CGImageRef mask = NULL;
     if (maskContext) {
         // Gray over the cover's own box: opaque down to kStillMeltFrom of its height, clear at its foot.
         CGGradientRef melt = CGGradientCreateWithColorComponents(gray, (CGFloat[]){1, 1, 0, 1}, (CGFloat[]){0, 1}, 2);
-        CGContextSetGray(maskContext, 0, 1);
+        CGContextSetGrayFillColor(maskContext, 0, 1);
         CGContextFillRect(maskContext, CGRectMake(0, 0, size.width, size.height));
         CGFloat top = CGRectGetMaxY(frame), melting = top - drawnHeight * kStillMeltFrom, foot = frame.origin.y;
-        CGContextSetGray(maskContext, 1, 1);
+        CGContextSetGrayFillColor(maskContext, 1, 1);
         CGContextFillRect(maskContext, CGRectMake(0, melting, size.width, MAX(0, top - melting)));
         CGContextSaveGState(maskContext);
         CGContextClipToRect(maskContext, CGRectMake(0, foot, size.width, MAX(0, melting - foot)));
