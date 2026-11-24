@@ -50,6 +50,8 @@ static const CGFloat kFootRows = 0.03;
 // sides. Apple Music's tall cover (3:4) keeps its own height from the top, whole, as the Music app draws it
 // (issues #40 and #57: drawn to the window's height it lost two fifths of its width).
 static const CGFloat kCanvasAspect = 1.5;
+// A still cover (Full-screen cover) is filled into a box this much taller than wide.
+static const CGFloat kStillAspect = 1.25;
 // The blur starts at the seam, or this share of the screen down where that is higher, so it is under the
 // controls whatever the clip's shape; it is whole kBlurRamp points below its start.
 static const CGFloat kBlurByControls = 0.6, kBlurRamp = 96;
@@ -153,8 +155,7 @@ static UIColor *footColor(CGImageRef poster) {
     UIVisualEffectView *_seamBlur, *_lyricsBlur;
     CGFloat _aspect;
     BOOL _timing;   // the give-up's count is running
-    BOOL _fills;    // a still cover: sharp at the screen's width, melting into a blurred copy of itself
-    CALayer *_backdrop;   // that copy, over the whole player, under the cover
+    BOOL _fills;    // a still cover, filled a quarter taller than wide, its foot melting into its own color
 }
 
 // What fades is the effect views' effect, never their alpha or an ancestor's: UIKit draws a blur under a
@@ -174,11 +175,6 @@ static UIBlurEffect *blurEffect(void) {
     // An AVPlayerLayer draws nothing until its first frame is decoded, so the poster, the clip's first
     // frame and where the looper starts, is the contents of the layer the video draws in: there is a
     // picture from the first frame, and the video covers it exactly.
-    _backdrop = [CALayer layer];
-    _backdrop.contentsGravity = kCAGravityResizeAspectFill;
-    _backdrop.masksToBounds = YES;
-    _backdrop.hidden = YES;
-    [_picture.layer addSublayer:_backdrop];
     _still = [CALayer layer];
     _still.contentsGravity = kCAGravityResizeAspectFill;
     _still.masksToBounds = YES;
@@ -238,6 +234,8 @@ static UIBlurEffect *blurEffect(void) {
     CGFloat width = bounds.size.width, total = MAX(1, bounds.size.height);
     CGFloat screen = _screenHeight > 0 ? _screenHeight : total;
     CGFloat height = round(width * _aspect);
+    // A still cover is drawn a quarter taller than wide, filled, its foot melting into its own color.
+    if (_fills) height = round(width * kStillAspect);
     if (_aspect > kCanvasAspect) height = MAX(height, screen);
     CGFloat seam = round(height * kFootFrom), blurFrom = MIN(seam, round(screen * kBlurByControls));
     _picture.frame = bounds;
@@ -247,7 +245,6 @@ static UIBlurEffect *blurEffect(void) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _still.frame = CGRectMake(0, 0, width, height);
-    _backdrop.frame = bounds;
     _clip.frame = _still.bounds;
     _clipMask.frame = _still.bounds;
     _foot.frame = CGRectMake(0, seam, width, MAX(0, total - seam));
@@ -273,18 +270,7 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)playStill:(UIImage *)cover {
     _fills = YES;
-    // The copy is drawn small and scaled up, which is all the blur it needs; the cover's foot melts into it.
-    CGSize tiny = CGSizeMake(32, 32);
-    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
-    format.scale = 1;
-    UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:tiny format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        [cover drawInRect:CGRectMake(0, 0, tiny.width, tiny.height)];
-    }];
-    _backdrop.contents = (__bridge id)small.CGImage;
-    _backdrop.magnificationFilter = kCAFilterLinear;
-    _backdrop.hidden = NO;
-    _foot.hidden = YES;
-    _clipMask.locations = @[@0, @0.72, @1];
+    _clipMask.locations = @[@0, @0.75, @1];
     _aspect = cover.size.height / cover.size.width;
     _foot.backgroundColor = footColor(cover.CGImage).CGColor;
     _still.contents = (__bridge id)cover.CGImage;

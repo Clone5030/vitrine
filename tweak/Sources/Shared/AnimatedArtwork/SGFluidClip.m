@@ -219,7 +219,7 @@ BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
 // The cover sharp at the clip's full width from near the top, its foot melting into a blurred copy of it that
 // fills the rest, with the same shade over the bottom. Not cropped to fill: a square cover cut to a tall clip
 // lost its sides and was drawn too large to stay sharp.
-static const CGFloat kStillTop = 0.06, kStillMeltFrom = 0.7;
+static const CGFloat kStillTop = 0, kStillMeltFrom = 0.75, kStillAspect = 1.25;
 
 CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
     if (!cover) return NULL;
@@ -237,7 +237,8 @@ CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
         CGImageRelease(blurred);
     }
     // The sharp cover at the width of the clip, its lower part fading out through a mask.
-    CGFloat side = size.width, drawnHeight = side * height / MAX(width, 1);
+    // The cover filled into a box a quarter taller than wide, so its sides lose a little and it stays sharp.
+    CGFloat side = size.width, drawnHeight = MIN(size.height, side * kStillAspect);
     CGRect frame = CGRectMake(0, size.height - round(size.height * kStillTop) - drawnHeight, side, drawnHeight);
     CGColorSpaceRef gray = CGColorSpaceCreateWithName(kCGColorSpaceGenericGray);
     CGContextRef maskContext = CGBitmapContextCreate(NULL, (size_t)size.width, (size_t)size.height, 8, 0, gray, (CGBitmapInfo)kCGImageAlphaNone);
@@ -262,7 +263,9 @@ CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
     CGContextSaveGState(context);
     if (mask) CGContextClipToMask(context, CGRectMake(0, 0, size.width, size.height), mask);
     CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
-    CGContextDrawImage(context, frame, cover);
+    CGContextClipToRect(context, frame);
+    CGFloat fill = MAX(frame.size.width / MAX(width, 1), frame.size.height / MAX(height, 1));
+    CGContextDrawImage(context, CGRectMake(frame.origin.x + (frame.size.width - width * fill) / 2, frame.origin.y + (frame.size.height - height * fill) / 2, width * fill, height * fill), cover);
     CGContextRestoreGState(context);
     CGImageRelease(mask);
     CGGradientRef shade = CGGradientCreateWithColorComponents(space, (CGFloat[]){0, 0, 0, 0, 0, 0, 0, kShadeAlpha}, (CGFloat[]){0, 1}, 2);
