@@ -338,7 +338,7 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
 
 #pragma mark - the seek line
 
-static NSString *clock(double seconds) {
+static NSString *timeText(double seconds) {
     NSInteger whole = MAX(0, (NSInteger)llround(seconds));
     return [NSString stringWithFormat:@"%ld:%02ld", (long)(whole / 60), (long)(whole % 60)];
 }
@@ -396,9 +396,9 @@ static NSString *clock(double seconds) {
 - (void)showSeekShare:(double)share of:(double)duration {
     share = MIN(1, MAX(0, share));
     _seekFill.frame = CGRectMake(0, 0, round(_seekTrack.bounds.size.width * share), _seekTrack.bounds.size.height);
-    _elapsed.text = clock(share * duration);
-    _remaining.text = [@"-" stringByAppendingString:clock((1 - share) * duration)];
-    _seek.accessibilityValue = [NSString stringWithFormat:@"%@ of %@", clock(share * duration), clock(duration)];
+    _elapsed.text = timeText(share * duration);
+    _remaining.text = [@"-" stringByAppendingString:timeText((1 - share) * duration)];
+    _seek.accessibilityValue = [NSString stringWithFormat:@"%@ of %@", timeText(share * duration), timeText(duration)];
 }
 
 - (double)seekShareAt:(CGPoint)point {
