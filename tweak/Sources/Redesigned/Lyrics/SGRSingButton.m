@@ -7,19 +7,14 @@
 #import "SGRSingButton.h"
 
 static const CGFloat kGlyph = 17, kRingWidth = 2.5, kRingInset = 1.5;
-// The slider's capsule over the button, and the gap between them: wider than SGRGlassSpacing (16), so the
-// two glass shapes stay apart rather than sampling each other.
-static const CGFloat kPanelHeight = 168, kPanelGap = 24, kLevelWidth = 120, kLevelHeight = 20;
-// The capsule opens from just under full size at the mic, the way a popover grows out of what opened it.
-static const CGFloat kPanelEnterScale = 0.95;
-static const NSTimeInterval kPanelStays = 2.5;
+// The pill the circle grows into, this tall from its bottom edge up, and the level's label over it.
+static const CGFloat kPillHeight = 176, kLevelWidth = 120, kLevelHeight = 20, kLevelGap = 6;
+static const NSTimeInterval kOpenStays = 4;
 static const float kLevelStep = 0.05f;
-// As sung (1) holds the thumb this close either side, 4% of the slider's travel: a detent caught with a tick, as the
+// As sung (1) holds the level this close either side, 4% of the pill's travel: a detent caught with a tick, as the
 // Sing page's tall slider ticks there.
 static const float kAsSungCatch = 0.08f;
-static const CGFloat kMarkWidth = 14;
-static char kPanelGlassKey;
-// The button is a tall white capsule with a dark mic and sparkles on it, as Apple Music's Sing button is, so its
+// The button is a white circle with a dark mic and sparkles on it, as Apple Music's Sing button is, so its
 // glyphs are dark. The mic and the sparkles are drawn once into one template image, so the button's tint colors them.
 static const CGFloat kPillMicTilt = 40;   // degrees clockwise: the mic's head leans to the upper right
 
@@ -30,7 +25,7 @@ static UIColor *ink(void) {
 static UIImage *singGlyph(void) {
     static UIImage *image;
     if (image) return image;
-    CGSize size = CGSizeMake(28, 40);
+    CGSize size = CGSizeMake(30, 32);
     UIImage *mic = [UIImage systemImageNamed:@"mic.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightSemibold]];
     UIImage *big = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:10 weight:UIImageSymbolWeightBold]];
     UIImage *small = [UIImage systemImageNamed:@"sparkle" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:7 weight:UIImageSymbolWeightBold]];
@@ -38,54 +33,74 @@ static UIImage *singGlyph(void) {
     UIImage *drawn = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGContextRef c = context.CGContext;
         CGContextSaveGState(c);
-        CGContextTranslateCTM(c, size.width / 2, size.height / 2 + 1);
+        CGContextTranslateCTM(c, size.width / 2, size.height / 2 + 0.5);
         CGContextRotateCTM(c, kPillMicTilt * M_PI / 180);
         [[mic imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(-mic.size.width / 2, -mic.size.height / 2, mic.size.width, mic.size.height)];
         CGContextRestoreGState(c);
-        [[big imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(0, 2, big.size.width, big.size.height)];
-        [[small imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(size.width - small.size.width - 1, size.height - small.size.height - 3, small.size.width, small.size.height)];
+        [[big imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(0, 1, big.size.width, big.size.height)];
+        [[small imageWithTintColor:UIColor.blackColor renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(size.width - small.size.width - 0.5, size.height - small.size.height - 1.5, small.size.width, small.size.height)];
     }];
     image = [drawn imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return image;
 }
 
 @implementation SGRSingButton {
-    UIView *_pill;       // the white capsule behind the glyph; not glass, so it fades by its alpha
+    UIView *_track;      // the dark capsule behind the pill, as tall as the pill when it is open
+    UIView *_fill;       // the white capsule: the circle itself, growing up with the level when it is open
     UIButton *_button;   // holds no glass, so its alpha is free to fade
     CAShapeLayer *_ring;
     BOOL _ringShown;
     NSString *_glyph;
-    UIView *_panel;
-    UISlider *_slider;
-    UIView *_mark;       // across the track at As sung
+    UIPanGestureRecognizer *_pan;
     UISelectionFeedbackGenerator *_feedback;
-    BOOL _caught;        // the thumb is held at As sung
+    BOOL _caught;        // the level is held at As sung
+    float _panStart;     // the level when the finger came down
     UILabel *_level;
     NSTimer *_hide;
-    BOOL _panelShown;
+    BOOL _open;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    // A white capsule behind a plain button (layoutSubviews), which fades by its alpha when the controls go.
-    _pill = [UIView new];
-    _pill.backgroundColor = UIColor.whiteColor;
-    _pill.layer.cornerCurve = kCACornerCurveContinuous;
-    _pill.userInteractionEnabled = NO;
-    [self addSubview:_pill];
+    // A circle with a mic. A tap grows it into a pill that a finger drags up and down to set the mix; no glass,
+    // so everything fades by its alpha when the controls go.
+    _track = [UIView new];
+    _track.backgroundColor = [UIColor colorWithWhite:0.26 alpha:0.92];
+    _track.layer.cornerCurve = kCACornerCurveContinuous;
+    _track.userInteractionEnabled = NO;
+    _track.alpha = 0;
+    [self addSubview:_track];
+    _fill = [UIView new];
+    _fill.backgroundColor = UIColor.whiteColor;
+    _fill.layer.cornerCurve = kCACornerCurveContinuous;
+    _fill.userInteractionEnabled = NO;
+    [self addSubview:_fill];
+
     UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
     config.preferredSymbolConfigurationForImage = [UIImageSymbolConfiguration configurationWithPointSize:kGlyph weight:UIImageSymbolWeightSemibold];
     _button = [UIButton buttonWithConfiguration:config primaryAction:nil];
-    // Light, so the glyph's dark ink reads on the white capsule whatever the system's appearance is.
+    // Light, so the glyph's dark ink reads on the white whatever the system's appearance is.
     _button.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     _button.tintColor = ink();
     _button.isAccessibilityElement = NO;
     [_button addTarget:self action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
-    [_button addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
     [self addSubview:_button];
 
-    // VoiceOver has the mic itself as one adjustable button: the slider shows only for a held finger and
-    // goes again on a timer, which a swipe up or down never holds open.
+    _pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panned:)];
+    _pan.maximumNumberOfTouches = 1;
+    [self addGestureRecognizer:_pan];
+    _feedback = [UISelectionFeedbackGenerator new];
+
+    _level = [UILabel new];
+    _level.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    _level.textColor = [UIColor colorWithWhite:1 alpha:0.8];
+    _level.textAlignment = NSTextAlignmentRight;
+    _level.isAccessibilityElement = NO;
+    _level.alpha = 0;
+    [self addSubview:_level];
+
+    // VoiceOver has the mic itself as one adjustable button: the pill shows only for a finger and goes again
+    // on a timer, which a swipe up or down never holds open.
     self.isAccessibilityElement = YES;
     self.accessibilityLabel = @"Karaoke";
     self.accessibilityHint = @"Turns the vocals down";
@@ -110,37 +125,97 @@ static UIImage *singGlyph(void) {
     [_hide invalidate];
 }
 
+#pragma mark - the circle and the pill
+
+// The circle's side, which is the pill's width: the host gives the button a square.
+- (CGFloat)side {
+    return self.bounds.size.width;
+}
+
+- (CGRect)trackFrame {
+    CGFloat side = [self side];
+    return _open ? CGRectMake(0, side - kPillHeight, side, kPillHeight) : CGRectMake(0, 0, side, side);
+}
+
+// White from the bottom up: the circle at its least, the whole pill at the vocals alone.
+- (CGRect)fillFrame {
+    CGFloat side = [self side];
+    float level = MAX(0, MIN(2, SGSingLevel()));
+    CGFloat height = _open ? side + (kPillHeight - side) * level / 2 : side;
+    return CGRectMake(0, side - height, side, height);
+}
+
+- (CGRect)levelFrame {
+    CGFloat side = [self side];
+    return CGRectMake(side - kLevelWidth, side - kPillHeight - kLevelHeight - kLevelGap, kLevelWidth, kLevelHeight);
+}
+
+- (void)placePill {
+    CGFloat radius = [self side] / 2;
+    _track.layer.cornerRadius = radius;
+    _fill.layer.cornerRadius = radius;
+    _track.frame = [self trackFrame];
+    _fill.frame = [self fillFrame];
+    _level.frame = [self levelFrame];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect bounds = self.bounds;
     _button.frame = bounds;
-    _pill.frame = bounds;
-    _pill.layer.cornerRadius = MIN(bounds.size.width, bounds.size.height) / 2;
+    [self placePill];
     _ring.frame = bounds;
-    // A circle in the middle of the capsule, as wide as the capsule: it turns about its centre, which a
-    // capsule-shaped ring could not. Starting at the top and running clockwise, as a download ring does.
+    // A circle around the mic, which turns about its centre. Starting at the top and running clockwise, as a
+    // download ring does.
     CGFloat radius = MIN(bounds.size.width, bounds.size.height) / 2 - kRingInset - kRingWidth / 2;
     _ring.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds)) radius:radius
                                             startAngle:-M_PI_2 endAngle:3 * M_PI_2 clockwise:YES].CGPath;
-    if (_panel) SGRShowGlass([self placePanel], _panelShown);
 }
 
-// Goes with the host's controls, in the host's animation: the capsule, the glyph and the ring fade, and an open
-// slider goes with them.
+// Open or closed, in whatever animation the caller has open, or in one of its own.
+- (void)setOpen:(BOOL)open animated:(BOOL)animated {
+    if (_open == open) return;
+    _open = open;
+    [_hide invalidate];
+    _hide = nil;
+    if (open) [self updateLevel];
+    void (^fade)(void) = ^{
+        self->_track.alpha = open ? 1 : 0;
+        self->_level.alpha = open ? 1 : 0;
+    };
+    void (^grow)(void) = ^{ [self placePill]; };
+    if (animated) {
+        SGRAnimate(SGRMotionRespond, fade, nil);
+        SGRAnimateLayout(self, grow, nil);
+    } else {
+        fade();
+        grow();
+    }
+    if (open) [self letGo];
+}
+
+// Goes with the host's controls, in the host's animation: the circle, the glyph and the ring fade, and an open
+// pill goes with them.
 - (void)setTucked:(BOOL)tucked {
     _tucked = tucked;
-    _pill.alpha = tucked ? 0 : 1;
+    if (tucked) [self setOpen:NO animated:NO];
+    _fill.alpha = tucked ? 0 : 1;
     _button.alpha = tucked ? 0 : 1;
     [self showRing];
     self.userInteractionEnabled = !tucked;
-    if (tucked && _panelShown) [self panelGone];
+}
+
+// The level's words and the white's height, which follow the level wherever it is set from.
+- (void)updateLevel {
+    _level.text = SGSingLevelText(SGSingLevel());
+    if (_open) _fill.frame = [self fillFrame];
 }
 
 #pragma mark - what Sing is doing
 
 - (void)refresh {
     SGSingState state = SGSingCurrentState();
-    // "mic.fill" stands for the capsule's own glyph, the tilted mic with its sparkles (singGlyph); the other
+    // "mic.fill" stands for the circle's own glyph, the tilted mic with its sparkles (singGlyph); the other
     // states keep a plain symbol that says what they are.
     NSString *glyph = @"mic.fill";
     UIColor *tint = ink();
@@ -211,6 +286,7 @@ static UIImage *singGlyph(void) {
         [_ring removeAnimationForKey:@"turn"];
     }
     [self showRing];
+    [self updateLevel];
 }
 
 // The ring fades rather than popping in and out; a turning one keeps turning until it is gone.
@@ -248,10 +324,7 @@ static UIImage *singGlyph(void) {
 
 - (void)stepLevel:(int)direction {
     SGSetSingLevel(roundf((SGSingLevel() + direction * 2 * kLevelStep) / kLevelStep) * kLevelStep);
-    if (_panel) {
-        _slider.value = SGSingLevel();
-        [self showLevel];
-    }
+    [self updateLevel];
 }
 
 #pragma mark - the tap
@@ -265,6 +338,8 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
+// The circle opens into the pill, turning Karaoke on if it is off; the mic at the foot of the open pill puts
+// it away again, turning Karaoke off. Where Karaoke cannot run yet, a tap says what is missing instead.
 - (void)tapped {
     switch (SGSingCurrentState()) {
         case SGSingStateUnavailable:
@@ -286,125 +361,65 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
             tell(SGSingStatusDetail(), @"Turn Karaoke off", ^{ SGSetSingOn(NO); });
             return;
         default:
-            SGSetSingOn(!SGSingOn());
+            break;
+    }
+    if (_open) {
+        SGSetSingOn(NO);
+        [self setOpen:NO animated:YES];
+    } else {
+        if (!SGSingOn()) SGSetSingOn(YES);
+        [self setOpen:YES animated:YES];
     }
 }
 
-#pragma mark - the slider
+#pragma mark - the drag
 
-- (void)held:(UILongPressGestureRecognizer *)hold {
-    if (hold.state != UIGestureRecognizerStateBegan) return;
-    [self showPanel];
+// Up is more of the voice and down is more of the music: the vocals alone at the top, the song as sung in the
+// middle, the music alone at the bottom. The level follows the finger by how far it has moved, so a touch
+// anywhere on the pill picks up where it is.
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)recognizer {
+    if (recognizer == _pan) return _open;
+    return [super gestureRecognizerShouldBegin:recognizer];
 }
 
-- (void)showPanel {
-    if (!_panel) {
-        _panel = [UIView new];
-        _panel.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        _panel.layer.anchorPoint = CGPointMake(0.5, 1);   // its bottom edge, over the mic
-        _slider = [UISlider new];
-        _slider.minimumValue = 0;
-        _slider.maximumValue = 2;
-        _slider.transform = CGAffineTransformMakeRotation(-M_PI_2);
-        _slider.accessibilityLabel = @"Vocals";
-        [_slider addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
-        [_slider addTarget:self action:@selector(holdPanel) forControlEvents:UIControlEventTouchDown];
-        [_slider addTarget:self action:@selector(letPanelGo) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
-        [_panel addSubview:_slider];
-        _mark = [UIView new];
-        _mark.backgroundColor = [UIColor colorWithWhite:1 alpha:0.35];
-        _mark.userInteractionEnabled = NO;
-        [_panel insertSubview:_mark belowSubview:_slider];
-        _feedback = [UISelectionFeedbackGenerator new];
-        _level = [UILabel new];
-        _level.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
-        _level.textColor = [UIColor colorWithWhite:1 alpha:0.8];
-        _level.textAlignment = NSTextAlignmentRight;
-        _level.isAccessibilityElement = NO;
-        [self addSubview:_panel];
-        [self addSubview:_level];
-        _slider.alpha = _mark.alpha = _level.alpha = 0;
-        SGRShowGlass([self placePanel], NO);
-        if (!SGRReduceMotion()) _panel.transform = CGAffineTransformMakeScale(kPanelEnterScale, kPanelEnterScale);
+- (void)panned:(UIPanGestureRecognizer *)pan {
+    switch (pan.state) {
+        case UIGestureRecognizerStateBegan:
+            [_hide invalidate];
+            _hide = nil;
+            _panStart = SGSingLevel();
+            _caught = fabsf(_panStart - 1) <= kAsSungCatch;
+            [_feedback prepare];
+            break;
+        case UIGestureRecognizerStateChanged: {
+            CGFloat travel = MAX(1, kPillHeight - [self side]);
+            float raw = _panStart - (float)([pan translationInView:self].y / travel) * 2;
+            raw = MAX(0, MIN(2, raw));
+            BOOL caught = fabsf(raw - 1) <= kAsSungCatch;
+            float level = caught ? 1 : raw;
+            if (caught && !_caught) [_feedback selectionChanged];
+            _caught = caught;
+            SGSetSingLevel(roundf(level / kLevelStep) * kLevelStep);
+            [self updateLevel];
+            break;
+        }
+        default:
+            [self letGo];
+            break;
     }
-    _slider.minimumTrackTintColor = SGRAccentColor() ?: UIColor.systemGreenColor;
-    _slider.value = SGSingLevel();
-    [self showLevel];
-    UIView *glass = [self placePanel];
-    _panelShown = YES;
-    // The fade answers the hold at once; the growth is motion, which Reduce Motion leaves out.
-    SGRAnimate(SGRMotionRespond, ^{
-        SGRShowGlass(glass, YES);
-        self->_slider.alpha = self->_mark.alpha = self->_level.alpha = 1;
-    }, nil);
-    SGRAnimateLayout(self, ^{ self->_panel.transform = CGAffineTransformIdentity; }, nil);
-    [self letPanelGo];
 }
 
-// Bounds and a center rather than a frame, since the capsule can be under its entering scale.
-- (UIView *)placePanel {
-    CGFloat width = self.bounds.size.width, top = -kPanelGap - kPanelHeight;
-    _panel.bounds = CGRectMake(0, 0, width, kPanelHeight);
-    _panel.center = CGPointMake(width / 2, -kPanelGap);
-    UIView *glass = SGRGlassCapsuleInside(_panel, &kPanelGlassKey, _panel.bounds.size, NO);
-    _slider.bounds = CGRectMake(0, 0, kPanelHeight - 24, 31);
-    _slider.center = CGPointMake(width / 2, kPanelHeight / 2);
-    // The slider is centered, so As sung, the middle of its range, is the capsule's middle.
-    _mark.frame = CGRectMake((width - kMarkWidth) / 2, kPanelHeight / 2 - 0.5, kMarkWidth, 1);
-    _level.frame = CGRectMake(width - kLevelWidth, top - kLevelHeight - 4, kLevelWidth, kLevelHeight);
-    return glass;
-}
-
-- (void)showLevel {
-    _level.text = SGSingLevelText(_slider.value);
-    _slider.accessibilityValue = _level.text;
-}
-
-// Near As sung the thumb holds there, with a tick as it catches; the finger drags it on out of the band.
-- (void)slid {
-    BOOL caught = fabsf(_slider.value - 1) <= kAsSungCatch;
-    if (caught) _slider.value = 1;
-    if (caught && !_caught) [_feedback selectionChanged];
-    _caught = caught;
-    SGSetSingLevel(roundf(_slider.value / kLevelStep) * kLevelStep);
-    [self showLevel];
-}
-
-- (void)holdPanel {
-    [_hide invalidate];
-    _hide = nil;
-    _caught = fabsf(_slider.value - 1) <= kAsSungCatch;
-    [_feedback prepare];
-}
-
-- (void)letPanelGo {
+// The pill closes itself after a while without a touch, leaving Karaoke as it is set.
+- (void)letGo {
     [_hide invalidate];
     __weak SGRSingButton *weakSelf = self;
-    _hide = [NSTimer scheduledTimerWithTimeInterval:kPanelStays repeats:NO block:^(NSTimer *timer) { [weakSelf hidePanel]; }];
+    _hide = [NSTimer scheduledTimerWithTimeInterval:kOpenStays repeats:NO block:^(NSTimer *timer) { [weakSelf setOpen:NO animated:YES]; }];
 }
 
-// Out faster than it came, and without shrinking: nothing is watched on its way out.
-- (void)hidePanel {
-    if (!_panelShown) return;
-    SGRAnimate(SGRMotionRespond, ^{ [self panelGone]; }, ^(BOOL finished) {
-        if (!self->_panelShown && !SGRReduceMotion()) self->_panel.transform = CGAffineTransformMakeScale(kPanelEnterScale, kPanelEnterScale);
-    });
-}
-
-// The capsule's glass and the slider gone, in whatever animation the caller has open.
-- (void)panelGone {
-    _panelShown = NO;
-    [_hide invalidate];
-    _hide = nil;
-    SGRShowGlass(SGRGlassCapsuleInside(_panel, &kPanelGlassKey, _panel.bounds.size, NO), NO);
-    _slider.alpha = _mark.alpha = _level.alpha = 0;
-}
-
-// The slider sits outside the button's bounds, above it, and takes touches while it shows.
+// The open pill reaches above the circle's own bounds, and takes touches there while it shows.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    if (_panelShown && CGRectContainsPoint(_panel.frame, point)) return YES;
-    // The capsule is skinnier than a fingertip wants, so its touch reaches a little past both sides.
-    return CGRectContainsPoint(CGRectInset(self.bounds, -5, 0), point);
+    CGRect reach = _open ? CGRectUnion(self.bounds, _track.frame) : self.bounds;
+    return CGRectContainsPoint(reach, point);
 }
 
 @end

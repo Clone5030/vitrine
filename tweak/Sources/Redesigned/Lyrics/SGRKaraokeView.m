@@ -43,9 +43,7 @@ static const CGFloat kCreditSize = 12, kCreditGap = 12, kCreditSlop = 8;
 // The button for the pronunciation and the translation, in the bottom leading corner as Apple Music
 // has it, and the gap between it and the credit beside it. The translate glyph is half again as wide as the
 // mic's across from it, so it is drawn smaller to weigh the same: 14 pt is about the mic's 17 pt in area.
-static const CGFloat kExtrasSide = 44, kExtrasBottom = 12, kExtrasGlyph = 14;
-static const CGFloat kSingWidth = 34, kSingHeight = 88;   // Sing's capsule: long and skinny
-static char kExtrasGlassKey;
+static const CGFloat kExtrasSide = 44, kExtrasBottom = 12, kExtrasGlyph = 14;static char kExtrasGlassKey;
 static const NSTimeInterval kRestyleFade = 0.3;   // the lines crossfading to a new style
 static const NSTimeInterval kBrowseHold = 3;   // after scrolling by hand, how long until it follows the song again
 static const double kFloatMinMs = 700, kFloatLeadMs = 80;   // a short word still floats up this slowly
@@ -1716,8 +1714,8 @@ typedef struct {
     [super layoutSubviews];
     [self alignFade];
     _scroll.contentSize = self.bounds.size;
-    // A long, skinny capsule on the trailing margin, with the same room under it as the extras button across from it.
-    _sing.frame = CGRectMake(self.bounds.size.width - _margin - kSingWidth, self.bounds.size.height - kSingHeight - kExtrasBottom, kSingWidth, kSingHeight);
+    // A small circle, the same size as the extras button across from it; opened, its pill grows up out of it.
+    _sing.frame = CGRectMake(self.bounds.size.width - _margin - kExtrasSide, self.bounds.size.height - kExtrasSide - kExtrasBottom, kExtrasSide, kExtrasSide);
     if (_extrasBox && !_extrasBox.hidden) {
         _extrasBox.frame = CGRectMake(_margin, self.bounds.size.height - kExtrasSide - kExtrasBottom, kExtrasSide, kExtrasSide);
         SGRShowGlass(SGRGlassInside(_extrasBox, &kExtrasGlassKey, kExtrasSide), !_extrasHidden);

@@ -4,10 +4,11 @@
 // where it is under a dimmed wifi struck through while the download waits for the network), a ring turning while the model prepares and while Sing listens ahead, the mic lit in the accent color while
 // the vocals are down, a thermometer while the heat holds it, a warning when it failed.
 //
-// A tap turns Sing on and off, or says what is missing and offers the model's download. Holding it brings up
-// its slider, which takes the vocals from gone at the bottom, through the song as sung in the middle, to the
-// vocals alone at the top. To VoiceOver the mic is one adjustable button: a swipe up or down moves the
-// same level.
+// It is a small white circle with a mic. A tap turns Sing on and opens the circle into a pill, which a finger
+// drags up and down: the music alone at the bottom, through the song as sung in the middle, to the vocals alone
+// at the top. The mic at the foot of the open pill turns Sing off and puts the pill away, as a few seconds without
+// a touch do (leaving Sing as it is). Where Sing cannot run yet, a tap says what is missing and offers the model's
+// download. To VoiceOver the mic is one adjustable button: a swipe up or down moves the same level.
 //
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
