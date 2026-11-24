@@ -153,7 +153,8 @@ static UIColor *footColor(CGImageRef poster) {
     UIVisualEffectView *_seamBlur, *_lyricsBlur;
     CGFloat _aspect;
     BOOL _timing;   // the give-up's count is running
-    BOOL _fills;    // a still cover drawn to the screen's height whatever its shape
+    BOOL _fills;    // a still cover: sharp at the screen's width, melting into a blurred copy of itself
+    CALayer *_backdrop;   // that copy, over the whole player, under the cover
 }
 
 // What fades is the effect views' effect, never their alpha or an ancestor's: UIKit draws a blur under a
@@ -173,6 +174,11 @@ static UIBlurEffect *blurEffect(void) {
     // An AVPlayerLayer draws nothing until its first frame is decoded, so the poster, the clip's first
     // frame and where the looper starts, is the contents of the layer the video draws in: there is a
     // picture from the first frame, and the video covers it exactly.
+    _backdrop = [CALayer layer];
+    _backdrop.contentsGravity = kCAGravityResizeAspectFill;
+    _backdrop.masksToBounds = YES;
+    _backdrop.hidden = YES;
+    [_picture.layer addSublayer:_backdrop];
     _still = [CALayer layer];
     _still.contentsGravity = kCAGravityResizeAspectFill;
     _still.masksToBounds = YES;
@@ -232,7 +238,7 @@ static UIBlurEffect *blurEffect(void) {
     CGFloat width = bounds.size.width, total = MAX(1, bounds.size.height);
     CGFloat screen = _screenHeight > 0 ? _screenHeight : total;
     CGFloat height = round(width * _aspect);
-    if (_aspect > kCanvasAspect || _fills) height = MAX(height, screen);
+    if (_aspect > kCanvasAspect) height = MAX(height, screen);
     CGFloat seam = round(height * kFootFrom), blurFrom = MIN(seam, round(screen * kBlurByControls));
     _picture.frame = bounds;
     _seamBlur.frame = bounds;
@@ -241,6 +247,7 @@ static UIBlurEffect *blurEffect(void) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _still.frame = CGRectMake(0, 0, width, height);
+    _backdrop.frame = bounds;
     _clip.frame = _still.bounds;
     _clipMask.frame = _still.bounds;
     _foot.frame = CGRectMake(0, seam, width, MAX(0, total - seam));
@@ -266,6 +273,18 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)playStill:(UIImage *)cover {
     _fills = YES;
+    // The copy is drawn small and scaled up, which is all the blur it needs; the cover's foot melts into it.
+    CGSize tiny = CGSizeMake(32, 32);
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:tiny format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [cover drawInRect:CGRectMake(0, 0, tiny.width, tiny.height)];
+    }];
+    _backdrop.contents = (__bridge id)small.CGImage;
+    _backdrop.magnificationFilter = kCAFilterLinear;
+    _backdrop.hidden = NO;
+    _foot.hidden = YES;
+    _clipMask.locations = @[@0, @0.72, @1];
     _aspect = cover.size.height / cover.size.width;
     _foot.backgroundColor = footColor(cover.CGImage).CGColor;
     _still.contents = (__bridge id)cover.CGImage;

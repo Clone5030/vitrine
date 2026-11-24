@@ -216,23 +216,62 @@ BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
 
 #pragma mark - the cover alone
 
+// The cover sharp at the clip's full width from near the top, its foot melting into a blurred copy of it that
+// fills the rest, with the same shade over the bottom. Not cropped to fill: a square cover cut to a tall clip
+// lost its sides and was drawn too large to stay sharp.
+static const CGFloat kStillTop = 0.06, kStillMeltFrom = 0.7;
+
 CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
     if (!cover) return NULL;
     CGContextRef context = newContext(size, NULL, 0);
     if (!context) return NULL;
     CGFloat width = CGImageGetWidth(cover), height = CGImageGetHeight(cover);
-    CGFloat scale = MAX(size.width / MAX(width, 1), size.height / MAX(height, 1));
-    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
-    CGContextDrawImage(context, CGRectMake((size.width - width * scale) / 2, (size.height - height * scale) / 2, width * scale, height * scale), cover);
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGFloat colors[] = {0, 0, 0, 0, 0, 0, 0, kShadeAlpha}, locations[] = {0, 1};
-    CGGradientRef shade = CGGradientCreateWithColorComponents(space, colors, locations, 2);
+    // The blurred copy, filled to the whole clip.
+    CGImageRef blurred = newBlurred(cover);
+    if (blurred) {
+        CGFloat bw = CGImageGetWidth(blurred), bh = CGImageGetHeight(blurred);
+        CGFloat fill = MAX(size.width / MAX(bw, 1), size.height / MAX(bh, 1));
+        CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+        CGContextDrawImage(context, CGRectMake((size.width - bw * fill) / 2, (size.height - bh * fill) / 2, bw * fill, bh * fill), blurred);
+        CGImageRelease(blurred);
+    }
+    // The sharp cover at the width of the clip, its lower part fading out through a mask.
+    CGFloat side = size.width, drawnHeight = side * height / MAX(width, 1);
+    CGRect frame = CGRectMake(0, size.height - round(size.height * kStillTop) - drawnHeight, side, drawnHeight);
+    CGColorSpaceRef gray = CGColorSpaceCreateWithName(kCGColorSpaceGenericGray);
+    CGContextRef maskContext = CGBitmapContextCreate(NULL, (size_t)size.width, (size_t)size.height, 8, 0, gray, kCGImageAlphaNone);
+    CGImageRef mask = NULL;
+    if (maskContext) {
+        // Gray over the cover's own box: opaque down to kStillMeltFrom of its height, clear at its foot.
+        CGGradientRef melt = CGGradientCreateWithColorComponents(gray, (CGFloat[]){1, 1, 0, 1}, (CGFloat[]){0, 1}, 2);
+        CGContextSetGray(maskContext, 0, 1);
+        CGContextFillRect(maskContext, CGRectMake(0, 0, size.width, size.height));
+        CGFloat top = CGRectGetMaxY(frame), melting = top - drawnHeight * kStillMeltFrom, foot = frame.origin.y;
+        CGContextSetGray(maskContext, 1, 1);
+        CGContextFillRect(maskContext, CGRectMake(0, melting, size.width, MAX(0, top - melting)));
+        CGContextSaveGState(maskContext);
+        CGContextClipToRect(maskContext, CGRectMake(0, foot, size.width, MAX(0, melting - foot)));
+        CGContextDrawLinearGradient(maskContext, melt, CGPointMake(0, melting), CGPointMake(0, foot), kCGGradientDrawsBeforeStartLocation);
+        CGContextRestoreGState(maskContext);
+        mask = CGBitmapContextCreateImage(maskContext);
+        CGGradientRelease(melt);
+        CGContextRelease(maskContext);
+    }
+    CGColorSpaceRelease(gray);
+    CGContextSaveGState(context);
+    if (mask) CGContextClipToMask(context, CGRectMake(0, 0, size.width, size.height), mask);
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextDrawImage(context, frame, cover);
+    CGContextRestoreGState(context);
+    CGImageRelease(mask);
+    CGGradientRef shade = CGGradientCreateWithColorComponents(space, (CGFloat[]){0, 0, 0, 0, 0, 0, 0, kShadeAlpha}, (CGFloat[]){0, 1}, 2);
     CGContextDrawLinearGradient(context, shade, CGPointMake(0, size.height * (1 - kShadeFrom)), CGPointZero, kCGGradientDrawsAfterEndLocation);
     CGGradientRelease(shade);
     CGColorSpaceRelease(space);
-    CGImageRef frame = CGBitmapContextCreateImage(context);
+    CGImageRef out = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
-    return frame;
+    return out;
 }
 
 BOOL SGCoverClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
