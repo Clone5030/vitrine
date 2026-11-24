@@ -213,3 +213,82 @@ BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
     [NSFileManager.defaultManager removeItemAtURL:file error:nil];
     return [NSFileManager.defaultManager moveItemAtURL:partial toURL:file error:nil];
 }
+
+#pragma mark - the cover alone
+
+CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
+    if (!cover) return NULL;
+    CGContextRef context = newContext(size, NULL, 0);
+    if (!context) return NULL;
+    CGFloat width = CGImageGetWidth(cover), height = CGImageGetHeight(cover);
+    CGFloat scale = MAX(size.width / MAX(width, 1), size.height / MAX(height, 1));
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextDrawImage(context, CGRectMake((size.width - width * scale) / 2, (size.height - height * scale) / 2, width * scale, height * scale), cover);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGFloat colors[] = {0, 0, 0, 0, 0, 0, 0, kShadeAlpha}, locations[] = {0, 1};
+    CGGradientRef shade = CGGradientCreateWithColorComponents(space, colors, locations, 2);
+    CGContextDrawLinearGradient(context, shade, CGPointMake(0, size.height * (1 - kShadeFrom)), CGPointZero, kCGGradientDrawsAfterEndLocation);
+    CGGradientRelease(shade);
+    CGColorSpaceRelease(space);
+    CGImageRef frame = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    return frame;
+}
+
+BOOL SGCoverClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
+    CGImageRef frame = SGCoverClipFrame(cover, size);
+    if (!frame) return NO;
+    NSURL *partial = [file URLByAppendingPathExtension:@"partial"];
+    [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
+    AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:partial fileType:AVFileTypeMPEG4 error:nil];
+    if (!writer) {
+        CGImageRelease(frame);
+        return NO;
+    }
+    const int32_t fps = 2, seconds = 2;
+    AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
+        AVVideoCodecKey: AVVideoCodecTypeH264,
+        AVVideoWidthKey: @(size.width),
+        AVVideoHeightKey: @(size.height),
+        AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(1500000), AVVideoMaxKeyFrameIntervalKey: @(fps)},
+    }];
+    AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
+        sourcePixelBufferAttributes:@{
+            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (id)kCVPixelBufferWidthKey: @(size.width),
+            (id)kCVPixelBufferHeightKey: @(size.height),
+        }];
+    BOOL ok = [writer canAddInput:input];
+    if (ok) {
+        [writer addInput:input];
+        ok = [writer startWriting];
+    }
+    if (ok) [writer startSessionAtSourceTime:kCMTimeZero];
+    for (int32_t i = 0; i < fps * seconds && ok; i++) {
+        while (!input.readyForMoreMediaData && writer.status == AVAssetWriterStatusWriting) [NSThread sleepForTimeInterval:0.002];
+        CVPixelBufferRef buffer = NULL;
+        ok = writer.status == AVAssetWriterStatusWriting && adaptor.pixelBufferPool
+            && CVPixelBufferPoolCreatePixelBuffer(NULL, adaptor.pixelBufferPool, &buffer) == kCVReturnSuccess;
+        if (!ok) break;
+        CVPixelBufferLockBaseAddress(buffer, 0);
+        CGContextRef context = newContext(size, CVPixelBufferGetBaseAddress(buffer), CVPixelBufferGetBytesPerRow(buffer));
+        CGContextDrawImage(context, (CGRect){CGPointZero, size}, frame);
+        CGContextRelease(context);
+        CVPixelBufferUnlockBaseAddress(buffer, 0);
+        ok = [adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(i, fps)];
+        CVPixelBufferRelease(buffer);
+    }
+    CGImageRelease(frame);
+    if (!ok) {
+        [writer cancelWriting];
+        return NO;
+    }
+    [input markAsFinished];
+    [writer endSessionAtSourceTime:CMTimeMake(seconds, 1)];
+    dispatch_semaphore_t written = dispatch_semaphore_create(0);
+    [writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(written); }];
+    dispatch_semaphore_wait(written, DISPATCH_TIME_FOREVER);
+    if (writer.status != AVAssetWriterStatusCompleted) return NO;
+    [NSFileManager.defaultManager removeItemAtURL:file error:nil];
+    return [NSFileManager.defaultManager moveItemAtURL:partial toURL:file error:nil];
+}

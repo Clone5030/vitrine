@@ -35,6 +35,9 @@ static inline BOOL SGLockArtworkShowsLyrics(SGLockArtwork artwork) {
 #define SGKeyLockScreenStarBack @"spotifyglass.lockscreen.star.back"
 // Off until switched on: download in Low Data Mode too.
 #define SGKeyMotionLowData @"spotifyglass.motion.lowdata"
+// Off until switched on: a track with no moving artwork shows its cover over the whole player and the whole lock
+// screen's artwork, instead of square over the field (PlayerMotion.x, LockScreenMotion.x).
+#define SGKeyMotionFullCover @"spotifyglass.motion.fullcover"
 
 typedef NS_ENUM(NSInteger, SGMotionShape) {
     SGMotionSquare,   // 1:1

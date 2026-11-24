@@ -38,6 +38,12 @@ static BOOL motionOn(SGLockArtwork choice) {
     return choice == SGLockArtworkMotion || choice == SGLockArtworkEverySong || choice == SGLockArtworkMotionLyrics;
 }
 
+// Full-screen cover is for a track with no moving artwork, under any choice but the two with lyrics, which fill
+// the same 3:4 key themselves.
+static BOOL fullCoverOn(SGLockArtwork choice) {
+    return SGFlag(SGKeyMotionFullCover, NO) && !SGLockArtworkShowsLyrics(choice);
+}
+
 // The key a clip shown at `shown` goes under, and the shape it is cut to (width over height): 1:1 for a
 // square clip, else 3:4, each where the system lists it, else the other. nil while it lists neither, before
 // MediaPlayer has started: the next track asks again.
@@ -170,6 +176,32 @@ static void showCover(NSString *picture) {
     SGLog(@"lock motion: no moving artwork, the cover's clip offered as %@", file.lastPathComponent);
 }
 
+// The cover filled edge to edge, for a track with no moving artwork while Full-screen cover is on.
+API_AVAILABLE(ios(26.0))
+static void showFullCover(NSString *picture) {
+    if (![MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys containsObject:MPNowPlayingInfoProperty3x4AnimatedArtwork]) return;
+    NSURL *file = SGMotionMadeFile([@"still\n" stringByAppendingString:picture]);
+    NSString *title = sg_title;
+    CGSize size = SGLyricsClipSize(SGMotionPixels());
+    MPMediaItemAnimatedArtwork *artwork = [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:file.lastPathComponent
+        previewImageRequestHandler:^(CGSize wanted, void (^completion)(UIImage *)) {
+            withCover(title, ^(CGImageRef cover) {
+                CGImageRef frame = SGCoverClipFrame(cover, size);
+                completion(frame ? filled([UIImage imageWithCGImage:frame], wanted) : nil);
+                CGImageRelease(frame);
+            });
+        }
+        videoAssetFileURLRequestHandler:^(CGSize wanted, void (^completion)(NSURL *)) {
+            withCover(title, ^(CGImageRef cover) {
+                BOOL ok = [NSFileManager.defaultManager fileExistsAtPath:file.path] || SGCoverClipWrite(file, cover, size);
+                SGLog(@"lock motion: the full-screen cover %@ %@", file.lastPathComponent, ok ? @"ready" : @"not written");
+                completion(ok ? file : nil);
+            });
+        }];
+    SGNowPlayingSetExtras(@"motion", @{MPNowPlayingInfoProperty3x4AnimatedArtwork: artwork}, title);
+    SGLog(@"lock motion: no moving artwork, the full-screen cover offered as %@", file.lastPathComponent);
+}
+
 %ctor {
     if (@available(iOS 26.0, *)) {
         sg_choice = SGLockScreenArtwork();
@@ -184,7 +216,8 @@ static void showCover(NSString *picture) {
             sg_title = state.track.trackTitle;
             sg_picture = pictureOf(state.track, metadata);
             sg_choice = SGLockScreenArtwork();
-            return motionOn(sg_choice);
+            // Full-screen cover covers the choices that show artwork at all, so it walks for the clip first.
+            return motionOn(sg_choice) || fullCoverOn(sg_choice);
         } found:^(NSString *uri, NSURL *file) {
             // Under the lyrics instead, and never as this file's extra too: both would fill the same 3:4 key.
             if (sg_choice == SGLockArtworkMotionLyrics) {
@@ -193,8 +226,14 @@ static void showCover(NSString *picture) {
                 sg_lyricsFile = file;
                 SGLockMotionShowPlain(sg_plain);
                 SGLog(@"lock motion: %@ for the lyrics of %@", file ? file.lastPathComponent : @"no clip", uri);
-            } else if (file) show(file);
-            else if (sg_choice == SGLockArtworkEverySong) showCover(sg_picture);
+            } else if (file && motionOn(sg_choice)) {
+                show(file);
+            } else if (fullCoverOn(sg_choice)) {
+                // Moving artwork under the choices that do not show it is not shown: the cover is.
+                showFullCover(sg_picture);
+            } else if (!file && sg_choice == SGLockArtworkEverySong) {
+                showCover(sg_picture);
+            }
         }];
         // Heard on the writing thread and handed to main without waiting: a main-queue observer makes every
         // background defaults write wait for main, which deadlocks launch while main waits on Spotify's CoreThread.

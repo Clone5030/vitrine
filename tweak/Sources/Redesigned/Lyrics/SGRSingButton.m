@@ -10,6 +10,8 @@ static const CGFloat kGlyph = 17, kRingWidth = 2.5, kRingInset = 1.5;
 // The pill the circle grows into, this tall from its bottom edge up, and the level's label over it.
 static const CGFloat kPillHeight = 176, kLevelWidth = 120, kLevelHeight = 20, kLevelGap = 6;
 static const NSTimeInterval kOpenStays = 4;
+// Held, the pill is a little wider; pulled past either end it stretches by up to kStretchMost points, like rubber.
+static const CGFloat kHeldWiden = 6, kStretchMost = 24;
 static const float kLevelStep = 0.05f;
 // As sung (1) holds the level this close either side, 4% of the pill's travel: a detent caught with a tick, as the
 // Sing page's tall slider ticks there.
@@ -58,6 +60,9 @@ static UIImage *singGlyph(void) {
     UILabel *_level;
     NSTimer *_hide;
     BOOL _open;
+    CGFloat _stretch;    // points the pill is pulled past its top (+) or its bottom (-) by a finger beyond the ends
+    CGFloat _widen;      // points the pill is wider than the circle while a finger holds it
+    CGFloat _placedSide; // the circle's side the shapes were last laid out for
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -132,17 +137,23 @@ static UIImage *singGlyph(void) {
     return self.bounds.size.width;
 }
 
+// The shapes are laid out by frames, so nothing here may run under a transform. A finger beyond the ends stretches
+// them (_stretch) and a held pill is wider (_widen); both come back by themselves with a spring.
 - (CGRect)trackFrame {
     CGFloat side = [self side];
-    return _open ? CGRectMake(0, side - kPillHeight, side, kPillHeight) : CGRectMake(0, 0, side, side);
+    if (!_open) return CGRectMake(0, 0, side, side);
+    CGFloat up = MAX(0, _stretch), down = MAX(0, -_stretch);
+    return CGRectMake(-_widen / 2, side - kPillHeight - up, side + _widen, kPillHeight + up + down);
 }
 
 // White from the bottom up: the circle at its least, the whole pill at the vocals alone.
 - (CGRect)fillFrame {
     CGFloat side = [self side];
+    if (!_open) return CGRectMake(0, 0, side, side);
     float level = MAX(0, MIN(2, SGSingLevel()));
-    CGFloat height = _open ? side + (kPillHeight - side) * level / 2 : side;
-    return CGRectMake(0, side - height, side, height);
+    CGFloat height = side + (kPillHeight - side) * level / 2;
+    CGFloat up = MAX(0, _stretch), down = MAX(0, -_stretch);
+    return CGRectMake(-_widen / 2, side - height - up, side + _widen, height + up + down);
 }
 
 - (CGRect)levelFrame {
@@ -150,8 +161,10 @@ static UIImage *singGlyph(void) {
     return CGRectMake(side - kLevelWidth, side - kPillHeight - kLevelHeight - kLevelGap, kLevelWidth, kLevelHeight);
 }
 
-- (void)placePill {
-    CGFloat radius = [self side] / 2;
+// Every shape where the state puts it. Called inside an animation it moves them with it; the corner radius
+// follows the width so a held pill stays a capsule.
+- (void)applyShape {
+    CGFloat radius = ([self side] + (_open ? _widen : 0)) / 2;
     _track.layer.cornerRadius = radius;
     _fill.layer.cornerRadius = radius;
     _track.frame = [self trackFrame];
@@ -159,11 +172,26 @@ static UIImage *singGlyph(void) {
     _level.frame = [self levelFrame];
 }
 
+// The pill follows the level and the finger on a spring with a little bounce, so it trails the finger and settles
+// like something with weight, rather than jumping to each value.
+- (void)followFill {
+    if (!_open) return;
+    // Already headed there (the frames read back as the animation's end): nothing to start, as the download's
+    // many refreshes ask.
+    if (CGRectEqualToRect(_fill.frame, [self fillFrame]) && CGRectEqualToRect(_track.frame, [self trackFrame]) &&
+        _track.layer.cornerRadius == ([self side] + _widen) / 2) return;
+    SGRAnimate(SGRMotionPress, ^{ [self applyShape]; }, nil);
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect bounds = self.bounds;
     _button.frame = bounds;
-    [self placePill];
+    // Placed for a new size only: a layout pass in the middle of the pill's spring would cut it short.
+    if (fabs([self side] - _placedSide) > 0.5) {
+        _placedSide = [self side];
+        [self applyShape];
+    }
     _ring.frame = bounds;
     // A circle around the mic, which turns about its centre. Starting at the top and running clockwise, as a
     // download ring does.
@@ -173,24 +201,23 @@ static UIImage *singGlyph(void) {
 }
 
 // Open or closed, in whatever animation the caller has open, or in one of its own.
+// Opening is a spring with a little bounce, growing up out of the circle; closing is a spring with none, drawing back
+// into it. Only the end state is set before the animation, so nothing jumps ahead of it.
 - (void)setOpen:(BOOL)open animated:(BOOL)animated {
     if (_open == open) return;
     _open = open;
+    _stretch = 0;
+    _widen = 0;
     [_hide invalidate];
     _hide = nil;
-    if (open) [self updateLevel];
-    void (^fade)(void) = ^{
+    if (open) _level.text = SGSingLevelText(SGSingLevel());
+    void (^change)(void) = ^{
         self->_track.alpha = open ? 1 : 0;
         self->_level.alpha = open ? 1 : 0;
+        [self applyShape];
     };
-    void (^grow)(void) = ^{ [self placePill]; };
-    if (animated) {
-        SGRAnimate(SGRMotionRespond, fade, nil);
-        SGRAnimateLayout(self, grow, nil);
-    } else {
-        fade();
-        grow();
-    }
+    if (animated) SGRAnimate(open ? SGRMotionPress : SGRMotionLayout, change, nil);
+    else [UIView performWithoutAnimation:change];
     if (open) [self letGo];
 }
 
@@ -208,7 +235,7 @@ static UIImage *singGlyph(void) {
 // The level's words and the white's height, which follow the level wherever it is set from.
 - (void)updateLevel {
     _level.text = SGSingLevelText(SGSingLevel());
-    if (_open) _fill.frame = [self fillFrame];
+    [self followFill];
 }
 
 #pragma mark - what Sing is doing
@@ -390,10 +417,16 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
             _panStart = SGSingLevel();
             _caught = fabsf(_panStart - 1) <= kAsSungCatch;
             [_feedback prepare];
+            // Held, the pill swells a little, as a pressed thing does.
+            _widen = kHeldWiden;
+            [self followFill];
             break;
         case UIGestureRecognizerStateChanged: {
             CGFloat travel = MAX(1, kPillHeight - [self side]);
             float raw = _panStart - (float)([pan translationInView:self].y / travel) * 2;
+            // A finger beyond the top or the bottom stretches the pill like rubber, harder the further it goes.
+            float over = raw > 2 ? raw - 2 : (raw < 0 ? raw : 0);
+            _stretch = over == 0 ? 0 : copysign(kStretchMost * (1 - expf(-fabsf(over) * 2.2f)), over);
             raw = MAX(0, MIN(2, raw));
             BOOL caught = fabsf(raw - 1) <= kAsSungCatch;
             float level = caught ? 1 : raw;
@@ -404,6 +437,10 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
             break;
         }
         default:
+            // Let go, it springs back to its width and its length, with a bounce.
+            _widen = 0;
+            _stretch = 0;
+            [self followFill];
             [self letGo];
             break;
     }
