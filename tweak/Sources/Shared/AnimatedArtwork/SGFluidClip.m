@@ -213,3 +213,126 @@ BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
     [NSFileManager.defaultManager removeItemAtURL:file error:nil];
     return [NSFileManager.defaultManager moveItemAtURL:partial toURL:file error:nil];
 }
+
+#pragma mark - the cover alone
+
+// The cover sharp at the clip's full width from near the top, its foot melting into a blurred copy of it that
+// fills the rest, with the same shade over the bottom. Not cropped to fill: a square cover cut to a tall clip
+// lost its sides and was drawn too large to stay sharp.
+static const CGFloat kStillTop = 0, kStillMeltFrom = 0.75, kStillAspect = 1.25;
+
+CGImageRef SGCoverClipFrame(CGImageRef cover, CGSize size) {
+    if (!cover) return NULL;
+    CGContextRef context = newContext(size, NULL, 0);
+    if (!context) return NULL;
+    CGFloat width = CGImageGetWidth(cover), height = CGImageGetHeight(cover);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    // The blurred copy, filled to the whole clip.
+    CGImageRef blurred = newBlurred(cover);
+    if (blurred) {
+        CGFloat bw = CGImageGetWidth(blurred), bh = CGImageGetHeight(blurred);
+        CGFloat fill = MAX(size.width / MAX(bw, 1), size.height / MAX(bh, 1));
+        CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+        CGContextDrawImage(context, CGRectMake((size.width - bw * fill) / 2, (size.height - bh * fill) / 2, bw * fill, bh * fill), blurred);
+        CGImageRelease(blurred);
+    }
+    // The sharp cover at the width of the clip, its lower part fading out through a mask.
+    // The cover filled into a box a quarter taller than wide, so its sides lose a little and it stays sharp.
+    CGFloat side = size.width, drawnHeight = MIN(size.height, side * kStillAspect);
+    CGRect frame = CGRectMake(0, size.height - round(size.height * kStillTop) - drawnHeight, side, drawnHeight);
+    CGColorSpaceRef gray = CGColorSpaceCreateWithName(kCGColorSpaceGenericGray);
+    CGContextRef maskContext = CGBitmapContextCreate(NULL, (size_t)size.width, (size_t)size.height, 8, 0, gray, (CGBitmapInfo)kCGImageAlphaNone);
+    CGImageRef mask = NULL;
+    if (maskContext) {
+        // Gray over the cover's own box: opaque down to kStillMeltFrom of its height, clear at its foot.
+        CGGradientRef melt = CGGradientCreateWithColorComponents(gray, (CGFloat[]){1, 1, 0, 1}, (CGFloat[]){0, 1}, 2);
+        CGContextSetGrayFillColor(maskContext, 0, 1);
+        CGContextFillRect(maskContext, CGRectMake(0, 0, size.width, size.height));
+        CGFloat top = CGRectGetMaxY(frame), melting = top - drawnHeight * kStillMeltFrom, foot = frame.origin.y;
+        CGContextSetGrayFillColor(maskContext, 1, 1);
+        CGContextFillRect(maskContext, CGRectMake(0, melting, size.width, MAX(0, top - melting)));
+        CGContextSaveGState(maskContext);
+        CGContextClipToRect(maskContext, CGRectMake(0, foot, size.width, MAX(0, melting - foot)));
+        CGContextDrawLinearGradient(maskContext, melt, CGPointMake(0, melting), CGPointMake(0, foot), kCGGradientDrawsBeforeStartLocation);
+        CGContextRestoreGState(maskContext);
+        mask = CGBitmapContextCreateImage(maskContext);
+        CGGradientRelease(melt);
+        CGContextRelease(maskContext);
+    }
+    CGColorSpaceRelease(gray);
+    CGContextSaveGState(context);
+    if (mask) CGContextClipToMask(context, CGRectMake(0, 0, size.width, size.height), mask);
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextClipToRect(context, frame);
+    CGFloat fill = MAX(frame.size.width / MAX(width, 1), frame.size.height / MAX(height, 1));
+    CGContextDrawImage(context, CGRectMake(frame.origin.x + (frame.size.width - width * fill) / 2, frame.origin.y + (frame.size.height - height * fill) / 2, width * fill, height * fill), cover);
+    CGContextRestoreGState(context);
+    CGImageRelease(mask);
+    CGGradientRef shade = CGGradientCreateWithColorComponents(space, (CGFloat[]){0, 0, 0, 0, 0, 0, 0, kShadeAlpha}, (CGFloat[]){0, 1}, 2);
+    CGContextDrawLinearGradient(context, shade, CGPointMake(0, size.height * (1 - kShadeFrom)), CGPointZero, kCGGradientDrawsAfterEndLocation);
+    CGGradientRelease(shade);
+    CGColorSpaceRelease(space);
+    CGImageRef out = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    return out;
+}
+
+BOOL SGCoverClipWrite(NSURL *file, CGImageRef cover, CGSize size) {
+    CGImageRef frame = SGCoverClipFrame(cover, size);
+    if (!frame) return NO;
+    NSURL *partial = [file URLByAppendingPathExtension:@"partial"];
+    [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
+    AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:partial fileType:AVFileTypeMPEG4 error:nil];
+    if (!writer) {
+        CGImageRelease(frame);
+        return NO;
+    }
+    const int32_t fps = 2, seconds = 2;
+    AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
+        AVVideoCodecKey: AVVideoCodecTypeH264,
+        AVVideoWidthKey: @(size.width),
+        AVVideoHeightKey: @(size.height),
+        // A still at a low bitrate comes out blocky; this is one picture at a high one, in the High profile.
+        AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(16000000), AVVideoMaxKeyFrameIntervalKey: @(fps),
+                                           AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel},
+    }];
+    AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
+        sourcePixelBufferAttributes:@{
+            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (id)kCVPixelBufferWidthKey: @(size.width),
+            (id)kCVPixelBufferHeightKey: @(size.height),
+        }];
+    BOOL ok = [writer canAddInput:input];
+    if (ok) {
+        [writer addInput:input];
+        ok = [writer startWriting];
+    }
+    if (ok) [writer startSessionAtSourceTime:kCMTimeZero];
+    for (int32_t i = 0; i < fps * seconds && ok; i++) {
+        while (!input.readyForMoreMediaData && writer.status == AVAssetWriterStatusWriting) [NSThread sleepForTimeInterval:0.002];
+        CVPixelBufferRef buffer = NULL;
+        ok = writer.status == AVAssetWriterStatusWriting && adaptor.pixelBufferPool
+            && CVPixelBufferPoolCreatePixelBuffer(NULL, adaptor.pixelBufferPool, &buffer) == kCVReturnSuccess;
+        if (!ok) break;
+        CVPixelBufferLockBaseAddress(buffer, 0);
+        CGContextRef context = newContext(size, CVPixelBufferGetBaseAddress(buffer), CVPixelBufferGetBytesPerRow(buffer));
+        CGContextDrawImage(context, (CGRect){CGPointZero, size}, frame);
+        CGContextRelease(context);
+        CVPixelBufferUnlockBaseAddress(buffer, 0);
+        ok = [adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(i, fps)];
+        CVPixelBufferRelease(buffer);
+    }
+    CGImageRelease(frame);
+    if (!ok) {
+        [writer cancelWriting];
+        return NO;
+    }
+    [input markAsFinished];
+    [writer endSessionAtSourceTime:CMTimeMake(seconds, 1)];
+    dispatch_semaphore_t written = dispatch_semaphore_create(0);
+    [writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(written); }];
+    dispatch_semaphore_wait(written, DISPATCH_TIME_FOREVER);
+    if (writer.status != AVAssetWriterStatusCompleted) return NO;
+    [NSFileManager.defaultManager removeItemAtURL:file error:nil];
+    return [NSFileManager.defaultManager moveItemAtURL:partial toURL:file error:nil];
+}

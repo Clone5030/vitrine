@@ -10,8 +10,8 @@ UIViewController *SGRArtistSettingsPage(void) {
             SGSwitchRow(@"Artist logos", @"In place of the name on an artist's page", SGRKeyArtistLogo),
         ], @"Only the artist's name is sent to Apple Music."),
         SGSection(@"Hide on an artist's page", @[
-            SGSwitchRow(@"Videos", @"In the Music list, and in the Video tab", SGRKeyArtistHideVideos),
-            SGSwitchRow(@"Music, Video and Merch tabs", @"Without them the Music list is the page", SGRKeyArtistHideTabs),
+            SGHideRow(@"Videos", @"In the Music list, and in the Video tab", SGRKeyArtistHideVideos),
+            SGHideRow(@"Music, Video and Merch tabs", @"Without them the Music list is the page", SGRKeyArtistHideTabs),
             SGHideRow(@"Artist pick", nil, SGRKeyArtistHidePick),
             SGHideRow(@"Release countdown", @"The pre-save of an upcoming release", SGRKeyArtistHideCountdown),
             SGHideRow(@"About", nil, SGRKeyArtistHideAbout),

@@ -350,6 +350,11 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     for (SGModRow *row in fluid) row.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid; };
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
+        SGNotedSection(nil, @[SGOptionRow(@"Full-screen cover", nil, SGKeyMotionFullCover),
+                              SGOptionRow(@"Full-brightness covers", nil, SGRKeyPlayerFullBrightness)],
+                       @"A song with no animated cover shows its cover over the whole player with Animated, and over the whole lock "
+                       @"screen's artwork where that shows artwork (not with lyrics). Full-brightness covers take the dark layer off animated "
+                       @"artwork and the full-screen cover, so they show as they are; the lyrics keep theirs. Restart Spotify after switching them."),
         SGSection(nil, @[sources, lowData]),
         SGNotedSection(nil, fluid, @"Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid."),

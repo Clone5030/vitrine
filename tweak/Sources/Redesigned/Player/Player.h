@@ -110,6 +110,9 @@ static inline Class SGRDJClass(NSString *name) {
 // On until switched off. Placed by the footer's layout, between the controls (`controls`) and the footer row
 // (`row`), both arranged in Spotify's bottom stack, `margin` in from each side.
 #define SGRKeyPlayerVolume @"spotifyglass.redesign.player.volume"
+// Off until switched on: the clip and the full-screen cover are drawn without the dark layer that keeps white text
+// readable over a bright one (PlayerMotion.x). The lyrics' own darkening stays.
+#define SGRKeyPlayerFullBrightness @"spotifyglass.redesign.player.fullbrightness"
 BOOL SGRPlayerVolumeOn(void);
 // YES when the row shows; NO when it is off, has no controls to sit under or no room between them and the footer.
 BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat margin);
@@ -126,6 +129,11 @@ void SGRPlayerPaintCover(UIView *stack);
 // until switched off. Shown or put away by hand for the harness.
 #define SGRKeyLyricsLandscape @"spotifyglass.redesign.lyrics.landscape"
 void SGRPlayerShowLandscape(BOOL show);
+// The clip the portrait player is playing for the track (PlayerMotion.x), nil while it has none or shows a still
+// cover; posted, object nil, when that changes, always on the main queue after the change has settled. The
+// landscape screen plays the same file in its own view and keeps its own adjustment per file.
+extern NSNotificationName const SGRPlayerMotionDidChangeNotification;
+NSURL *SGRPlayerMotionClip(void);
 // The playing track's lines came in, or turned out to be none: the landscape screen lays out for it.
 void SGRPlayerLandscapeLinesChanged(void);
 

@@ -135,7 +135,7 @@ static void hideStrip(UIView *strip) {
     // updateConstraints], OverflowStackViewLayoutBuilder.Line.tallestView nil). The row stays Spotify's, and
     // ArtistHeader.x draws more itself.
     if (!SGRedesignedUI()) return;
-    hideTabs = SGEnabled(SGRKeyArtistHideTabs);
+    hideTabs = SGHidden(SGRKeyArtistHideTabs);
     %init;
     SGRequireClasses(@[
         @"_TtC32CreativeWorkPlatform_TemplateKit12TemplateView",
