@@ -883,19 +883,10 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     if (SGAccessibilityTextSize() && row.value) content.secondaryText = stackedValue(row);
     if (row.color) content.secondaryTextProperties.color = row.color;
     BOOL tile = row.symbol && !row.color && self.tiles;
-    BOOL plain = row.symbol && !row.color && !tile && self.plainIcons;
     if (tile) content.image = row.tint ? SGTileImageTinted(row.symbol, row.tint) : SGTileImage(row.symbol);
-    else if (plain) {
-        content.image = [UIImage systemImageNamed:row.symbol withConfiguration:
-            [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightRegular]];
-        content.imageProperties.tintColor = UIColor.whiteColor;
-        content.imageProperties.reservedLayoutSize = CGSizeMake(34, 0);
-        content.imageToTextPadding = 16;
-        content.textProperties.font = [UIFont systemFontOfSize:18 weight:UIFontWeightRegular];
-        content.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(15, 16, 15, 16);
-    } else if (!row.color) content.image = nil;
+    else if (!row.color) content.image = nil;
     cell.contentConfiguration = content;
-    cell.separatorInset = UIEdgeInsetsMake(0, tile ? SGTileRowInset : plain ? 16 + 34 + 16 : row.symbol && row.color ? 48 : 16, 0, 0);
+    cell.separatorInset = UIEdgeInsetsMake(0, tile ? SGTileRowInset : row.symbol && row.color ? 48 : 16, 0, 0);
 
     if (row.key) {
         BOOL locked = flagRowLocked(row);

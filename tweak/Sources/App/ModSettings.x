@@ -124,8 +124,7 @@ static UIViewController *modSettingsPage(void) {
         SGSection(nil, @[mod]),
     ]];
     SGModPage *page = [[SGModPage alloc] initWithTitle:@"Vitrine" intro:nil sections:sections footer:nil];
-    // Plain white icons in roomier rows, as Spotify's Account list draws them, in place of the colored tiles.
-    page.plainIcons = YES;
+    page.tiles = YES;
     return page;
 }
 
