@@ -17,6 +17,11 @@
 // Spotify's [automix, crossfade, crossfade time] from before the switch went on; set only while it is on.
 #define SGKeyAutoMixSaved @"spotifyglass.automix.saved"
 
+// Smart blend: with AutoMix on, each pair of songs gets its own blend length (see SmartMix.m). Default on.
+#define SGKeyAutoMixSmart @"spotifyglass.automix.smart"
+// The "Mixing" pill over the player's timeline while a blend is playing (the redesigned player). Default on.
+#define SGKeyAutoMixPill @"spotifyglass.automix.pill"
+
 typedef NS_ENUM(NSInteger, SGAutoMixStyle) { SGAutoMixBeatMatched, SGAutoMixCrossfade };
 
 // Spotify's own playback settings, read and written through its preferences object.
@@ -40,6 +45,13 @@ void SGAutoMixSetStyle(SGAutoMixStyle style);
 void SGAutoMixSetSeconds(NSInteger seconds);
 // YES on a Premium account, or a Free one under Spoof Premium; YES too before the product state is known.
 BOOL SGAutoMixAccountAllows(void);
+
+// Posted on the main thread when SGAutoMixMixing() changes.
+extern NSNotificationName const SGAutoMixMixingDidChangeNotification;
+// YES while the song playing is being blended into the next one by the blend length chosen for the pair.
+BOOL SGAutoMixMixing(void);
+// Starts the pair planner; called once the switch is on (SGAutoMixApply).
+void SGSmartMixStart(void);
 
 UIViewController *SGAutoMixSettingsPage(void);
 NSString *SGAutoMixSummary(void);   // On or Off, beside the root page's row

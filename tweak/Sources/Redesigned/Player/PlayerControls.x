@@ -393,6 +393,7 @@ static void durationLaidOut(UIViewController *unit) {
     UIView *host = unit.viewIfLoaded;
     if (!host) return;
     watchSlider(host);
+    SGRMixingPlace(host, objc_getAssociatedObject(host, &kSliderKey));
     UILabel *taken = monospaced(host, @"now-playing-time-take-label-internal", &kTakeKey);
     monospaced(host, @"now-playing-time-remaning-label-internal", &kRemainingKey);
     // Whether Spotify's font has digits of one width shows in the descriptor's feature settings.

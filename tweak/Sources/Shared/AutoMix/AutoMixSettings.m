@@ -26,8 +26,14 @@ UIViewController *SGAutoMixSettingsPage(void) {
         ^NSString *(double value) { return [NSString stringWithFormat:@"%ld s", lround(value)]; });
     blend.waitsOn = SGKeyAutoMix;
 
+    SGModRow *smart = SGSwitchRow(@"Smart blend length", nil, SGKeyAutoMixSmart);
+    smart.waitsOn = SGKeyAutoMix;
+    SGModRow *pill = SGSwitchRow(@"Mixing pill", nil, SGKeyAutoMixPill);
+    pill.waitsOn = SGKeyAutoMix;
+
     NSString *note = SGAutoMixAccountAllows() ? nil : @"AutoMix needs Premium, or Spoof Premium under Premium, ads & privacy.";
     return [[SGModPage alloc] initWithTitle:@"AutoMix" intro:nil sections:@[
         SGNotedSection(nil, @[toggle, style, blend], note),
+        SGNotedSection(nil, @[smart, pill], @"Smart blend picks a length for each pair of songs from what Spotify reports about them: none between songs that run on in an album, shorter for short songs, longest between artists. The Blend length is its ceiling. It does not listen for beats; Beat-matched is Spotify's own. The pill shows over the player's timeline while a blend plays."),
     ] footer:nil];
 }

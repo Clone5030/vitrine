@@ -73,6 +73,7 @@ void SGAutoMixApply(BOOL on) {
         }
         applyStyle(SGInt(SGKeyAutoMixStyle, SGAutoMixBeatMatched), now.milliseconds);
         startProbe();
+        SGSmartMixStart();
     } else if (saved.count == 3) {
         SGTransitionSettings before = {saved[0].boolValue, saved[1].boolValue, saved[2].integerValue};
         SGTransitionSettingsWrite(before);
@@ -237,5 +238,5 @@ NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error) {
 %ctor {
     %init;
     SGRequireClasses(@[@"SPTCoreProductState"]);
-    if (SGFlag(SGKeyAutoMix, NO)) startProbe();
+    if (SGFlag(SGKeyAutoMix, NO)) { startProbe(); SGSmartMixStart(); }
 }
