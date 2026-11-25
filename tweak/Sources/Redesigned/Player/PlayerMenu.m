@@ -18,6 +18,7 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/AnimatedArtwork/SGCustomArtwork.h"
 #import "Player.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the panels come from
@@ -217,6 +218,29 @@ static NSArray<UIMenuElement *> *playerItems(void) {
             if (kind == current) continue;
             [items addObject:[UIAction actionWithTitle:background[1] image:symbol(background[2]) identifier:nil
                                                handler:^(UIAction *action) { SGRPlayerMenuSetBackground(kind); }]];
+        }
+    }
+    // The person's own video as this song's artwork, looped without a seam (Shared/AnimatedArtwork/SGCustomArtwork.h). It
+    // shows under the Animated background, which choosing one switches to.
+    NSString *uri = SGURIString(SGPlayerState().track.URI);
+    if (SGPlayerMenuOffersAnimatedArtwork() && uri && [sheetKind() isEqualToString:@"track"]) {
+        BOOL has = SGCustomArtworkFor(uri) != nil;
+        UIAction *choose = [UIAction actionWithTitle:has ? @"Change Your Artwork" : @"Add Your Own Artwork" image:symbol(@"photo.badge.plus") identifier:nil
+                                             handler:^(UIAction *action) {
+            // After the menu has gone, or the picker has nothing to present over.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                SGCustomArtworkChoose(uri, ^(BOOL working) {
+                    if (!working && SGCustomArtworkFor(uri)) SGRPlayerMenuSetBackground(SGRPlayerBackgroundAnimated);
+                });
+            });
+        }];
+        choose.subtitle = @"A video that loops without a seam";
+        [items addObject:choose];
+        if (has) {
+            UIAction *remove = [UIAction actionWithTitle:@"Remove Your Artwork" image:symbol(@"trash") identifier:nil
+                                                 handler:^(UIAction *action) { SGCustomArtworkRemove(uri); }];
+            remove.attributes = UIMenuElementAttributesDestructive;
+            [items addObject:remove];
         }
     }
     UIAction *lyrics = lyricsSourceItem();

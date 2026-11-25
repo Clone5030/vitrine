@@ -9,6 +9,7 @@
 #import "Settings/SGSourcesPage.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "AnimatedArtwork.h"
+#import "SGCustomArtwork.h"
 #import "SGMotionClip.h"
 
 static NSString *const kCanvas = @"canvas", *const kAppleMusic = @"applemusic";
@@ -96,6 +97,12 @@ static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
 
 void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source)) {
+    // The person's own artwork for the song comes before every source (SGCustomArtwork.h).
+    NSURL *own = SGCustomArtworkFor(uri);
+    if (own) {
+        dispatch_async(dispatch_get_main_queue(), ^{ done(own, @"custom"); });
+        return;
+    }
     NSArray<NSString *> *order = SGMotionSourceOrder();
     // The walk holds itself until it ends, when it lets go.
     __block void (^ask)(NSUInteger) = nil;

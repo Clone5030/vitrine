@@ -5,6 +5,7 @@
 #import "Shared/Player/PlayerState.h"
 #import "AnimatedArtwork.h"
 #import "SGMotionClip.h"
+#import "SGCustomArtwork.h"
 
 @interface SGMotionFollower () <SGPlayerStateObserver>
 @end
@@ -25,6 +26,8 @@
     _begin = [begin copy];
     _found = [found copy];
     SGAddPlayerStateObserver(self);
+    // A song's own artwork set or taken off (SGCustomArtwork.h): its walk is run again. Heard where posted, which is main.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restart) name:SGCustomArtworkDidChangeNotification object:nil];
     return self;
 }
 

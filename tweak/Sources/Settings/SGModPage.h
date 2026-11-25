@@ -67,6 +67,9 @@
 - (void)refreshVisibility;
 // Rows draw their symbol on a colored tile; off, the default, they show none. Mod Settings' main page has them.
 @property (nonatomic) BOOL tiles;
+// Rows draw their symbol plain and white, a size larger, with roomier rows and larger titles, as Spotify's own Account
+// list does; for pages that show no tiles. Mod Settings' main page has them.
+@property (nonatomic) BOOL plainIcons;
 @end
 
 // The intro of every page whose switches the hooks read at launch.
