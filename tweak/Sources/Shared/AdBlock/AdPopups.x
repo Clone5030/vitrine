@@ -14,6 +14,16 @@ static NSString *const words[] = {
 
 static char kUpsellKey;
 
+static BOOL djCountryNotice(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return NO;
+    NSString *lower = text.lowercaseString;
+    BOOL namesDJ = [lower containsString:@"dj"] || [lower containsString:@"deejay"];
+    BOOL namesPlace = [lower containsString:@"country"] || [lower containsString:@"region"];
+    BOOL unavailable = [lower containsString:@"unavailable"] || [lower containsString:@"not available"] ||
+                       [lower containsString:@"isn't available"] || [lower containsString:@"aren't available"];
+    return namesDJ && namesPlace && unavailable;
+}
+
 static BOOL sells(NSString *text) {
     if (![text isKindOfClass:NSString.class]) return NO;
     text = text.lowercaseString;
@@ -36,10 +46,11 @@ static id readKey(id object, NSString *key) {
     return [object respondsToSelector:NSSelectorFromString(key)] ? [object valueForKey:key] : nil;
 }
 
+%group SGEncorePopupHooks
 %hook SPTEncorePopUpDialogModel
 - (id)initWithTitle:(NSString *)title description:(NSString *)description image:(id)image primaryButtonTitle:(NSString *)primary secondaryButtonTitle:(NSString *)secondary {
     id model = %orig;
-    if (model && (sells(title) || sells(description) || sells(primary) || sells(secondary))) mark(model);
+    if (model && SGHidden(SGKeyHideUpsells) && (sells(title) || sells(description) || sells(primary) || sells(secondary))) mark(model);
     return model;
 }
 %end
@@ -53,10 +64,15 @@ static id readKey(id object, NSString *key) {
 
 %hook SPTEncorePopUpPresenter
 - (void)presentPopUp:(id)popUp {
-    SGAdBlockSawOne(@"Popups");
     id model = readKey(popUp, @"model") ?: popUp;
     NSString *title = readKey(model, @"title") ?: readKey(model, @"dialogTitle");
     NSString *body = readKey(model, @"descriptionText") ?: readKey(model, @"body") ?: readKey(model, @"subtitle");
+    if (djCountryNotice(title) || djCountryNotice(body)) {
+        SGLog(@"dismissed DJ country-availability notice");
+        return;
+    }
+    if (!SGHidden(SGKeyHideUpsells)) { %orig; return; }
+    SGAdBlockSawOne(@"Popups");
     if (marked(popUp) || sells(title) || sells(body)) {
         SGAdBlockCountOne(@"Popups");
         SGLog(@"dropped pop-up %@", title ?: @"(marked at its model)");
@@ -65,9 +81,28 @@ static id readKey(id object, NSString *key) {
     %orig;
 }
 %end
+%end
+
+// Some Spotify builds present the same notice as a UIKit alert rather than an Encore popup.
+%hook UIViewController
+- (void)presentViewController:(UIViewController *)presented animated:(BOOL)animated completion:(void (^)(void))completion {
+    if ([presented isKindOfClass:UIAlertController.class]) {
+        UIAlertController *alert = (UIAlertController *)presented;
+        if (djCountryNotice(alert.title) || djCountryNotice(alert.message)) {
+            SGLog(@"dismissed DJ country-availability alert");
+            if (completion) completion();
+            return;
+        }
+    }
+    %orig;
+}
+%end
 
 %ctor {
-    if (!SGHidden(SGKeyHideUpsells)) return;
     %init;
-    SGRequireClasses(@[@"SPTEncorePopUpDialogModel", @"SPTEncorePopUpDialog", @"SPTEncorePopUpPresenter"]);
+    if (NSClassFromString(@"SPTEncorePopUpDialogModel") && NSClassFromString(@"SPTEncorePopUpDialog") &&
+        NSClassFromString(@"SPTEncorePopUpPresenter")) {
+        %init(SGEncorePopupHooks);
+        SGRequireClasses(@[@"SPTEncorePopUpDialogModel", @"SPTEncorePopUpDialog", @"SPTEncorePopUpPresenter"]);
+    }
 }
