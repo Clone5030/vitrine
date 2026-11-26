@@ -27,6 +27,7 @@
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "Shared/HeadGestures/HeadGestures.h"
+#import "Shared/Downloads/Downloads.h"
 #import "Shared/Player/PlayerSettings.h"
 #import "Shared/Sing/Sing.h"
 #import "Shared/Haptics/Haptics.h"
@@ -112,6 +113,7 @@ static UIViewController *modSettingsPage(void) {
     mod.value = ^NSString *{ return @(SG_VERSION); };
     [sections addObjectsFromArray:@[
         SGSection(nil, @[
+            pageRow(@"Spotify Downloads", @"arrow.down.circle", UIColor.systemTealColor, ^UIViewController *{ return SGDownloadsSettingsPage(); }),
             pageRow(@"Lock screen", @"lock.iphone", SGColorRGB(0x32ADE6), ^UIViewController *{ return SGLockScreenWidgetPage(); }),
             // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
             pageRow(@"Vibrations", @"waveform", UIColor.systemGreenColor, ^UIViewController *{ return SGVibrationsSettingsPage(); }),

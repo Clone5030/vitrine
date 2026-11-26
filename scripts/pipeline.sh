@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the spotifyglass tweak and injects it (plus FLEX) into a decrypted Spotify IPA.
 #
-#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--install] [--name N] [--icon P.png] [--keep-watch]
+#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--no-downloads] [--install] [--name N] [--icon P.png] [--keep-watch]
 #   (or: make build / make install)
 #
 # --keep-watch keeps Spotify's Apple Watch app, untested. Only its arm64 build is decrypted in an IPA dumped on an
@@ -33,13 +33,14 @@ FLEX_DEB="$ROOT/vendor/com.hopeless.autoflex_0.0.1_iphoneos-arm.deb"
 BUNDLE_ID="${BUNDLE_ID:-}"
 mkdir -p "$ROOT/out"
 
-IN="" OUT="" WITH_FLEX=1 INSTALL=0 NAME="" ICON="" KEEP_WATCH=""
+IN="" OUT="" WITH_FLEX=1 WITH_DOWNLOADS=1 INSTALL=0 NAME="" ICON="" KEEP_WATCH=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) OUT="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --icon) ICON="$2"; shift 2 ;;
     --no-flex) WITH_FLEX=0; shift ;;
+    --no-downloads) WITH_DOWNLOADS=0; shift ;;
     --install) INSTALL=1; shift ;;
     --keep-watch) KEEP_WATCH=1; shift ;;
     -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
@@ -76,6 +77,22 @@ MOD_VERSION="$(cat "$ROOT/version.txt" 2>/dev/null || true)"
 OUT="${OUT:-$ROOT/out/vitrine-$MOD_VERSION.ipa}"
 echo "==> Vitrine $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
 
+# Spotify offline downloads require guarded edits to the exact 9.1.90 executable and a companion dylib.
+# Other versions build normally without the feature.
+DOWNLOADS_DYLIB=""
+SPOTIFY_IN="$IN"
+if [ "$WITH_DOWNLOADS" = 1 ]; then
+  echo "==> checking Spotify offline Downloads support"
+  DL_RC=0
+  python3 "$ROOT/extension/Downloads/tools/build_downloads.py" "$IN" \
+    --out-ipa "$ROOT/out/.downloads-base.ipa" --out-dylib "$ROOT/out/SpotifyAudioProbe.dylib" >"$ROOT/out/.downloads.json" || DL_RC=$?
+  case "$DL_RC" in
+    0) IN="$ROOT/out/.downloads-base.ipa"; DOWNLOADS_DYLIB="$ROOT/out/SpotifyAudioProbe.dylib"; echo "    patched verified Spotify 9.1.90" ;;
+    3) echo "    unavailable: this is not the verified Spotify 9.1.90 build" ;;
+    *) echo "Downloads patch failed (exit $DL_RC); rerun with --no-downloads to build without it" >&2; exit "$DL_RC" ;;
+  esac
+fi
+
 # The flag table is generated rather than committed, so it always matches the IPA being built: again whenever
 # the Spotify it was read from (its first line) is not this one.
 FLAG_LIST="$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m"
@@ -100,6 +117,7 @@ echo "    $TWEAK_DEB"
 
 FILES=("$TWEAK_DEB")
 [ "$WITH_FLEX" = 1 ] && FILES+=("$FLEX_DEB")
+[ -n "$DOWNLOADS_DYLIB" ] && FILES+=("$DOWNLOADS_DYLIB")
 
 # The Live Activity (Shared/LiveActivity) draws in a widget extension of its own.
 if xcrun --sdk iphoneos --find swiftc >/dev/null 2>&1; then
@@ -207,5 +225,7 @@ if [ -n "${EXT_DIR:-}" ]; then
 fi
 
 echo "==> done: $OUT"
+[ "$IN" = "$SPOTIFY_IN" ] || rm -f "$IN" "$ROOT/out/.downloads.json"
+[ -z "$DOWNLOADS_DYLIB" ] || { echo "==> verifying Downloads in the finished IPA"; python3 "$ROOT/extension/Downloads/tools/verify_downloads.py" "$OUT"; }
 [ "$INSTALL" = 1 ] && exec "$ROOT/scripts/install.sh" "$OUT"
 exit 0
