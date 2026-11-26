@@ -1,4 +1,4 @@
-// Switch to video hidden from the player, under either look (SGKeyHideVideoSwitch, off until switched on).
+// Keep Spotify's video switch visible unless the user asks to hide it.
 //
 // The switch is the chip Spotify puts over the track's title for a song with a music video, Switch to
 // video and, once switched, Switch to audio. Its accessibility identifier is nowplaying-npv-musicvideos-switch:
@@ -27,19 +27,19 @@ static UIView *switchIn(UIView *root, int depth) {
     %orig;
     UIView *videoSwitch = switchIn(((UIViewController *)self).viewIfLoaded, 0);
     if (!videoSwitch) return;
+    BOOL hidden = SGHidden(SGKeyHideVideoSwitch);
+    videoSwitch.alpha = hidden ? 0 : 1;
+    videoSwitch.userInteractionEnabled = !hidden;
+    videoSwitch.accessibilityElementsHidden = hidden;
     static BOOL logged;
     if (!logged) {
         logged = YES;
-        SGLog(@"player: Switch to video hidden, %@ %@", NSStringFromClass(videoSwitch.class), NSStringFromCGRect(videoSwitch.frame));
+        SGLog(@"player: Spotify supplied its music video switch (%@ %@), %@", NSStringFromClass(videoSwitch.class), NSStringFromCGRect(videoSwitch.frame), hidden ? @"hidden by setting" : @"left visible");
     }
-    videoSwitch.alpha = 0;
-    videoSwitch.userInteractionEnabled = NO;
-    videoSwitch.accessibilityElementsHidden = YES;
 }
 %end
 
 %ctor {
-    if (!SGHidden(SGKeyHideVideoSwitch)) return;
     %init;
     SGRequireClasses(@[@"_TtC20NowPlaying_ModesImpl20FloatingElementsUnit"]);
 }
