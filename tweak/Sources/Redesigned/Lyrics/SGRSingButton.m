@@ -48,6 +48,7 @@ static UIImage *singGlyph(void) {
 
 @implementation SGRSingButton {
     UIView *_track;      // the dark capsule behind the pill, as tall as the pill when it is open
+    UIView *_fillClip;   // the track's inner capsule, clipping the level fill and preserving its outline
     UIView *_fill;       // the white capsule: the circle itself, growing up with the level when it is open
     UIButton *_button;   // holds no glass, so its alpha is free to fade
     CAShapeLayer *_ring;
@@ -79,11 +80,16 @@ static UIImage *singGlyph(void) {
     _track.userInteractionEnabled = NO;
     _track.alpha = 0;
     [self addSubview:_track];
+    _fillClip = [UIView new];
+    _fillClip.clipsToBounds = YES;
+    _fillClip.layer.cornerCurve = kCACornerCurveContinuous;
+    _fillClip.userInteractionEnabled = NO;
+    [self addSubview:_fillClip];
     _fill = [UIView new];
     _fill.backgroundColor = UIColor.whiteColor;
     _fill.layer.cornerCurve = kCACornerCurveContinuous;
     _fill.userInteractionEnabled = NO;
-    [self addSubview:_fill];
+    [_fillClip addSubview:_fill];
 
     UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
     config.preferredSymbolConfigurationForImage = [UIImageSymbolConfiguration configurationWithPointSize:kGlyph weight:UIImageSymbolWeightSemibold];
@@ -160,6 +166,12 @@ static UIImage *singGlyph(void) {
     return CGRectMake(-_widen / 2, side - height - up, side + _widen, height + up + down);
 }
 
+- (CGRect)fillFrameInClip {
+    CGRect track = [self trackFrame];
+    CGRect clip = CGRectInset(track, _track.layer.borderWidth, _track.layer.borderWidth);
+    return CGRectOffset([self fillFrame], -clip.origin.x, -clip.origin.y);
+}
+
 - (CGRect)levelFrame {
     CGFloat side = [self side];
     return CGRectMake(side - kLevelWidth, side - kPillHeight - kLevelHeight - kLevelGap, kLevelWidth, kLevelHeight);
@@ -169,15 +181,20 @@ static UIImage *singGlyph(void) {
 // follows the width so a held pill stays a capsule.
 - (void)applyShape {
     CGFloat radius = ([self side] + (_open ? _widen : 0)) / 2;
+    CGFloat inset = _track.layer.borderWidth;
+    CGRect trackFrame = [self trackFrame];
+    CGRect clipFrame = CGRectInset(trackFrame, inset, inset);
     _track.layer.cornerRadius = radius;
-    _fill.layer.cornerRadius = radius;
+    _fillClip.layer.cornerRadius = MAX(0, radius - inset);
+    _fill.layer.cornerRadius = MAX(0, radius - inset);
     // In the open pill, the moving level is a flat horizontal edge. Keep only the bottom corners
     // rounded so the fill still follows the capsule at its base; the closed mic remains a circle.
     _fill.layer.maskedCorners = _open
         ? (kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner)
         : (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner);
-    _track.frame = [self trackFrame];
-    _fill.frame = [self fillFrame];
+    _track.frame = trackFrame;
+    _fillClip.frame = clipFrame;
+    _fill.frame = [self fillFrameInClip];
     _level.frame = [self levelFrame];
 }
 
@@ -187,7 +204,8 @@ static UIImage *singGlyph(void) {
     if (!_open) return;
     // Already headed there (the frames read back as the animation's end): nothing to start, as the download's
     // many refreshes ask.
-    if (CGRectEqualToRect(_fill.frame, [self fillFrame]) && CGRectEqualToRect(_track.frame, [self trackFrame]) &&
+    if (CGRectEqualToRect(_fill.frame, [self fillFrameInClip]) && CGRectEqualToRect(_track.frame, [self trackFrame]) &&
+        CGRectEqualToRect(_fillClip.frame, CGRectInset([self trackFrame], _track.layer.borderWidth, _track.layer.borderWidth)) &&
         _track.layer.cornerRadius == ([self side] + _widen) / 2) return;
     SGRAnimate(SGRMotionPress, ^{ [self applyShape]; }, nil);
 }
