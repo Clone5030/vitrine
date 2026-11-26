@@ -86,7 +86,14 @@ void SGAutoMixApply(BOOL on) {
 // Spotify's settings were read. Reapplying an applied switch would undo a change made since in Settings > Playback.
 void SGAutoMixReconcile(void) {
     BOOL on = SGFlag(SGKeyAutoMix, NO);
-    if (on != ([NSUserDefaults.standardUserDefaults arrayForKey:SGKeyAutoMixSaved].count == 3)) SGAutoMixApply(on);
+    BOOL applied = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyAutoMixSaved].count == 3;
+    if (on != applied) {
+        SGAutoMixApply(on);
+    } else if (on) {
+        // Spotify's player and preferences are ready now; avoid registering the player observers from a dylib ctor.
+        startProbe();
+        SGSmartMixStart();
+    }
 }
 
 SGAutoMixStyle SGAutoMixCurrentStyle(void) {
@@ -238,5 +245,5 @@ NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error) {
 %ctor {
     %init;
     SGRequireClasses(@[@"SPTCoreProductState"]);
-    if (SGFlag(SGKeyAutoMix, NO)) { startProbe(); SGSmartMixStart(); }
 }
+
