@@ -171,6 +171,11 @@ static UIImage *singGlyph(void) {
     CGFloat radius = ([self side] + (_open ? _widen : 0)) / 2;
     _track.layer.cornerRadius = radius;
     _fill.layer.cornerRadius = radius;
+    // In the open pill, the moving level is a flat horizontal edge. Keep only the bottom corners
+    // rounded so the fill still follows the capsule at its base; the closed mic remains a circle.
+    _fill.layer.maskedCorners = _open
+        ? (kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner)
+        : (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner);
     _track.frame = [self trackFrame];
     _fill.frame = [self fillFrame];
     _level.frame = [self levelFrame];
