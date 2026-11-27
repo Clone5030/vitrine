@@ -25,8 +25,15 @@ static BOOL sg_mixing;
 static NSInteger sg_plannedMs;      // 0: this pair is not blended
 static NSString *sg_plannedFor;     // the playing song's URI, which the plan is for
 static NSInteger sg_ceilingMs;      // the longest blend: Spotify's setting as the switch left it
+static double sg_secondsUntilStart = -1;
 
 BOOL SGAutoMixMixing(void) { return sg_mixing; }
+double SGAutoMixSecondsUntilStart(void) { return sg_secondsUntilStart; }
+double SGAutoMixPlannedSeconds(void) {
+    if (SGFlag(SGKeyAutoMixSmart, NO)) return sg_plannedMs / 1000.0;
+    SGTransitionSettings settings;
+    return SGTransitionSettingsRead(&settings) && settings.crossfade ? settings.milliseconds / 1000.0 : 0;
+}
 
 static NSString *meta(id track, NSString *key) {
     if (![track isKindOfClass:NSClassFromString(@"SPTPlayerTrack")]) return nil;
@@ -77,7 +84,7 @@ static NSInteger planFor(SPTPlayerState *state, id next, NSInteger ceiling) {
     NSString *uri = SGURIString(state.track.URI);
     id next = state.future.firstObject;
     BOOL known = [next isKindOfClass:NSClassFromString(@"SPTPlayerTrack")];
-    if (uri && known && SGFlag(SGKeyAutoMixSmart, YES) && !(sg_plannedFor && [sg_plannedFor isEqualToString:uri] && [self planned:next])) {
+    if (uri && known && SGFlag(SGKeyAutoMixSmart, NO) && !(sg_plannedFor && [sg_plannedFor isEqualToString:uri] && [self planned:next])) {
         SGTransitionSettings s;
         if (!SGTransitionSettingsRead(&s)) return;
         // The ceiling is Spotify's blend length the first time, and the slider's value after.
@@ -106,17 +113,32 @@ static NSInteger planFor(SPTPlayerState *state, id next, NSInteger ceiling) {
 - (void)tick {
     SPTPlayerState *state = _last;
     NSInteger blend = sg_plannedMs;
-    if (!SGFlag(SGKeyAutoMixSmart, YES)) {
+    NSString *trackURI = state ? SGURIString(state.track.URI) : nil;
+    if (!SGFlag(SGKeyAutoMixSmart, NO)) {
         // Without the plan, Spotify's one blend length is the length of every blend.
         SGTransitionSettings s;
         blend = SGTransitionSettingsRead(&s) && s.crossfade ? s.milliseconds : 0;
-    } else if (![sg_plannedFor isEqualToString:SGURIString(state.track.URI) ?: @""]) {
+    } else if (![sg_plannedFor isEqualToString:trackURI ?: @""]) {
         blend = 0;
     }
-    if (!state || !SGFlag(SGKeyAutoMix, NO) || state.isPaused || !blend || state.options.repeatingTrack) { [self setMixing:NO]; return; }
+    if (!state || !SGFlag(SGKeyAutoMix, NO) || state.isPaused || !blend || state.options.repeatingTrack || state.duration <= 0) {
+        BOOL changed = sg_mixing || sg_secondsUntilStart >= 0;
+        sg_mixing = NO;
+        sg_secondsUntilStart = -1;
+        if (changed) [NSNotificationCenter.defaultCenter postNotificationName:SGAutoMixMixingDidChangeNotification object:nil];
+        return;
+    }
     double elapsed = [NSDate.date timeIntervalSinceDate:state.timestamp] * state.playbackSpeed;
     double left = state.duration - (state.positionAsOfTimestamp + elapsed);
-    [self setMixing:left > 0 && left <= blend / 1000.0];
+    double window = blend / 1000.0;
+    BOOL mixing = left > 0 && left <= window;
+    double until = MAX(0, left - window);
+    BOOL changed = mixing != sg_mixing || (mixing ? sg_secondsUntilStart >= 0 : fabs(until - sg_secondsUntilStart) >= 0.45);
+    sg_secondsUntilStart = mixing ? -1 : until;
+    if (changed) {
+        sg_mixing = mixing;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGAutoMixMixingDidChangeNotification object:nil];
+    }
 }
 
 @end

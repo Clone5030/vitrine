@@ -6,8 +6,7 @@
 // Turning the switch off puts Spotify's three settings back as they were when it was turned on. While it is on,
 // both pages write the same object, so a change made in Spotify's Playback page counts as AutoMix's and goes too.
 //
-//     AutoMix.x           Spotify's product state, captured; the switch's writes, through Shared/SpotifyPrefs;
-//                         the probe, one log line per track change while the switch is on
+//     AutoMix.x           Spotify's product state and the switch's writes, through Shared/SpotifyPrefs
 //     AutoMixSettings.m   its page
 #import <UIKit/UIKit.h>
 
@@ -17,10 +16,14 @@
 // Spotify's [automix, crossfade, crossfade time] from before the switch went on; set only while it is on.
 #define SGKeyAutoMixSaved @"spotifyglass.automix.saved"
 
-// Smart blend: with AutoMix on, each pair of songs gets its own blend length (see SmartMix.m). Default on.
+// Optional per-pair blend planner. Off until explicitly enabled to keep AutoMix on Spotify's native path by default.
 #define SGKeyAutoMixSmart @"spotifyglass.automix.smart"
-// The "Mixing" pill over the player's timeline while a blend is playing (the redesigned player). Default on.
+// Transition display options; off until explicitly enabled.
 #define SGKeyAutoMixPill @"spotifyglass.automix.pill"
+// Transition presentation options for the redesigned player.
+#define SGKeyAutoMixArtwork @"spotifyglass.automix.artwork"
+#define SGKeyAutoMixProgress @"spotifyglass.automix.progress"
+#define SGKeyAutoMixStatus @"spotifyglass.automix.status"
 
 typedef NS_ENUM(NSInteger, SGAutoMixStyle) { SGAutoMixBeatMatched, SGAutoMixCrossfade };
 
@@ -50,6 +53,10 @@ BOOL SGAutoMixAccountAllows(void);
 extern NSNotificationName const SGAutoMixMixingDidChangeNotification;
 // YES while the song playing is being blended into the next one by the blend length chosen for the pair.
 BOOL SGAutoMixMixing(void);
+// Remaining time until the planned transition window starts, or -1 when no transition is planned.
+double SGAutoMixSecondsUntilStart(void);
+// The planned transition length, in seconds; zero when none is planned.
+double SGAutoMixPlannedSeconds(void);
 // Starts the pair planner; called once the switch is on (SGAutoMixApply).
 void SGSmartMixStart(void);
 

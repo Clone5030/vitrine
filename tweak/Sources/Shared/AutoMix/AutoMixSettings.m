@@ -26,14 +26,26 @@ UIViewController *SGAutoMixSettingsPage(void) {
         ^NSString *(double value) { return [NSString stringWithFormat:@"%ld s", lround(value)]; });
     blend.waitsOn = SGKeyAutoMix;
 
-    SGModRow *smart = SGSwitchRow(@"Smart blend length", nil, SGKeyAutoMixSmart);
+    SGModRow *smart = SGOptionRow(@"Smart blend length", nil, SGKeyAutoMixSmart);
     smart.waitsOn = SGKeyAutoMix;
-    SGModRow *pill = SGSwitchRow(@"Mixing pill", nil, SGKeyAutoMixPill);
+    smart.changed = ^(BOOL on) { if (on && SGFlag(SGKeyAutoMix, NO)) SGSmartMixStart(); };
+    SGModRow *pill = SGOptionRow(@"Mixing pill", nil, SGKeyAutoMixPill);
     pill.waitsOn = SGKeyAutoMix;
+    pill.changed = ^(BOOL on) { if (on && SGFlag(SGKeyAutoMix, NO)) SGSmartMixStart(); };
+
+    SGModRow *artwork = SGOptionRow(@"Artwork moves with the mix", nil, SGKeyAutoMixArtwork);
+    artwork.waitsOn = SGKeyAutoMix;
+    artwork.changed = ^(BOOL on) { if (on && SGFlag(SGKeyAutoMix, NO)) SGSmartMixStart(); };
+    SGModRow *progress = SGOptionRow(@"Transitions in the progress bar", @"Show the transition range on the player scrubber", SGKeyAutoMixProgress);
+    progress.waitsOn = SGKeyAutoMix;
+    progress.changed = ^(BOOL on) { if (on && SGFlag(SGKeyAutoMix, NO)) SGSmartMixStart(); };
+    SGModRow *status = SGOptionRow(@"Transition status", @"Shows over the player which mix is next and when it starts", SGKeyAutoMixStatus);
+    status.waitsOn = SGKeyAutoMix;
+    status.changed = ^(BOOL on) { if (on && SGFlag(SGKeyAutoMix, NO)) SGSmartMixStart(); };
 
     NSString *note = SGAutoMixAccountAllows() ? nil : @"AutoMix needs Premium, or Spoof Premium under Premium, ads & privacy.";
     return [[SGModPage alloc] initWithTitle:@"AutoMix" intro:nil sections:@[
         SGNotedSection(nil, @[toggle, style, blend], note),
-        SGNotedSection(nil, @[smart, pill], @"Smart blend picks a length for each pair of songs from what Spotify reports about them: none between songs that run on in an album, shorter for short songs, longest between artists. The Blend length is its ceiling. It does not listen for beats; Beat-matched is Spotify's own. The pill shows over the player's timeline while a blend plays."),
+        SGNotedSection(nil, @[smart, pill, artwork, progress, status], @"These extra player features are off until enabled. Smart blend picks a length for each pair from Spotify's track details; it does not listen for beats. Beat-matched is Spotify's own."),
     ] footer:nil];
 }

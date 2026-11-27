@@ -56,7 +56,10 @@ static void applyStyle(SGAutoMixStyle style, NSInteger milliseconds) {
     SGLog(@"automix: Spotify set to %@", describe(s));
 }
 
-static void startProbe(void);
+static BOOL shouldStartSmartMix(void) {
+    return SGFlag(SGKeyAutoMixSmart, NO) || SGFlag(SGKeyAutoMixPill, NO)
+        || SGFlag(SGKeyAutoMixProgress, NO) || SGFlag(SGKeyAutoMixStatus, NO);
+}
 
 void SGAutoMixApply(BOOL on) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -72,8 +75,7 @@ void SGAutoMixApply(BOOL on) {
             SGLog(@"automix: on, Spotify was %@", describe(now));
         }
         applyStyle(SGInt(SGKeyAutoMixStyle, SGAutoMixBeatMatched), now.milliseconds);
-        startProbe();
-        SGSmartMixStart();
+        if (shouldStartSmartMix()) SGSmartMixStart();
     } else if (saved.count == 3) {
         SGTransitionSettings before = {saved[0].boolValue, saved[1].boolValue, saved[2].integerValue};
         SGTransitionSettingsWrite(before);
@@ -91,8 +93,7 @@ void SGAutoMixReconcile(void) {
         SGAutoMixApply(on);
     } else if (on) {
         // Spotify's player and preferences are ready now; avoid registering the player observers from a dylib ctor.
-        startProbe();
-        SGSmartMixStart();
+        if (shouldStartSmartMix()) SGSmartMixStart();
     }
 }
 
@@ -127,86 +128,6 @@ BOOL SGAutoMixAccountAllows(void) {
 
 NSString *SGAutoMixSummary(void) {
     return SGFlag(SGKeyAutoMix, NO) ? @"On" : @"Off";
-}
-
-#pragma mark - the probe
-
-static NSString *automixKeys(id track) {
-    if (![track isKindOfClass:NSClassFromString(@"SPTPlayerTrack")]) return @"no track";
-    NSDictionary *metadata = ((SPTPlayerTrack *)track).metadata;
-    if (![metadata isKindOfClass:NSDictionary.class]) return @"no metadata";
-    NSMutableArray<NSString *> *found = [NSMutableArray array];
-    for (NSString *key in [metadata.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-        if (![key isKindOfClass:NSString.class] || !([key hasPrefix:@"automix."] || [key hasPrefix:@"md_"])) continue;
-        NSString *value = [metadata[key] description];
-        if (value.length > 160) value = [[value substringToIndex:160] stringByAppendingString:@"…"];
-        [found addObject:[NSString stringWithFormat:@"%@=%@", key, value]];
-    }
-    return [NSString stringWithFormat:@"%lu keys, {%@}", (unsigned long)metadata.count, [found componentsJoinedByString:@", "]];
-}
-
-static NSString *trackLine(id track) {
-    if (![track isKindOfClass:NSClassFromString(@"SPTPlayerTrack")]) return @"none";
-    SPTPlayerTrack *t = track;
-    NSDictionary *metadata = t.metadata;
-    return [NSString stringWithFormat:@"%@ \"%@\" album \"%@\" provider %@, %@", SGURIString(t.URI), t.trackTitle ?: metadata[@"title"],
-            metadata[@"album_title"], t.provider, automixKeys(t)];
-}
-
-// The previous state, kept from every report so the line can say how much of the old track was left at the change:
-// about the blend length when the core overlapped them, about 0 when it did not.
-@interface SGAutoMixProbe : NSObject <SGPlayerStateObserver>
-@end
-
-@implementation SGAutoMixProbe {
-    NSString *_uri;
-    NSUInteger _metadataCount;
-    SPTPlayerState *_last;
-}
-
-static NSUInteger metadataCount(id track) {
-    if (![track isKindOfClass:NSClassFromString(@"SPTPlayerTrack")]) return 0;
-    NSDictionary *metadata = ((SPTPlayerTrack *)track).metadata;
-    return [metadata isKindOfClass:NSDictionary.class] ? metadata.count : 0;
-}
-
-- (void)playerStateDidReport:(SPTPlayerState *)state {
-    if (!SGFlag(SGKeyAutoMix, NO)) return;
-    NSString *uri = SGURIString(state.track.URI);
-    id next = state.future.firstObject;
-    // Counted rather than formatted, since this runs on every report; a new count is metadata that came after its track.
-    NSUInteger count = metadataCount(state.track) + metadataCount(next);
-    if (uri && ![uri isEqualToString:_uri]) {
-        SGTransitionSettings s;
-        NSString *settings = SGTransitionSettingsRead(&s) ? describe(s) : @"not read yet";
-        double left = 0;
-        if (_last) {
-            // Where the old track stood at this report's time, not at now, which comes later.
-            double elapsed = [state.timestamp timeIntervalSinceDate:_last.timestamp] * (_last.isPaused ? 0 : _last.playbackSpeed);
-            left = MAX(0, _last.duration - (_last.positionAsOfTimestamp + elapsed));
-        }
-        SGLog(@"automix probe: change, %.2f s of the last track left; context %@; now %@; next %@; Spotify %@", left,
-              SGURIString(state.contextURI), trackLine(state.track), trackLine(next), settings);
-    } else if (uri && count != _metadataCount) {
-        SGLog(@"automix probe: update; now %@; next %@", trackLine(state.track), trackLine(next));
-    }
-    _uri = uri;
-    _metadataCount = count;
-    _last = state;
-}
-
-- (void)playerStateDidChange:(SPTPlayerState *)state {
-}
-
-@end
-
-static void startProbe(void) {
-    static SGAutoMixProbe *probe;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        probe = [SGAutoMixProbe new];
-        SGAddPlayerStateObserver(probe);
-    });
 }
 
 #pragma mark - driver
@@ -246,4 +167,3 @@ NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error) {
     %init;
     SGRequireClasses(@[@"SPTCoreProductState"]);
 }
-

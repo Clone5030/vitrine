@@ -21,9 +21,12 @@
 #import "Redesigned/Kit/SGRRepaint.h"
 #import "Redesigned/Kit/SGRGlass.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Redesigned/Kit/SGRBridges.h"
 #import "Settings/SGMarquee.h"
 #import "NowPlayingBar.h"
 #import "Redesigned/Navbar/Navbar.h"
+#import "Redesigned/Player/Player.h"
+#import "Shared/Player/PlayerState.h"
 
 static const CGFloat kCardRadius = 24;
 // The strip's pane is this much smaller than the strip at each end, so a gap parts it from the card's glass.
@@ -35,6 +38,9 @@ static __weak UIVisualEffectView *sg_cardGlass;
 static __weak UIView *sg_cardArtwork;
 static __weak UIView *sg_progress;
 static __weak UIViewController *sg_container;
+static __weak UIView *sg_miniMotionArt;
+static __weak UIView *sg_miniMotionView;
+static NSString *sg_miniMotionTrack;
 // The container's view while it stands in the minimized tab bar's row, below the page that holds it.
 static __weak UIView *sg_inline;
 
@@ -159,6 +165,37 @@ static void restyleCardContent(UIView *card) {
         [progress setNeedsLayout];
         [progress layoutIfNeeded];
     }
+}
+
+// When the full-screen player is set to Animated, mirror its Canvas or Apple Music cover in the 40pt mini-player
+// artwork. The clip lookup and source order are shared with the Player page; this small view owns its own loop.
+static void updateMiniMotion(void) {
+    UIView *artwork = sg_cardArtwork;
+    NSString *track = SGURIString(SGPlayerState().track.URI);
+    BOOL wanted = artwork.window && track.length && SGRPlayerBackground() == SGRPlayerBackgroundAnimated;
+    if (!wanted || artwork != sg_miniMotionArt || ![track isEqualToString:sg_miniMotionTrack]) {
+        [sg_miniMotionView removeFromSuperview];
+        sg_miniMotionView = nil;
+        sg_miniMotionArt = wanted ? artwork : nil;
+        sg_miniMotionTrack = wanted ? track : nil;
+    }
+    if (!wanted || sg_miniMotionView) return;
+
+    __weak UIView *weakArtwork = artwork;
+    NSString *requestedTrack = [track copy];
+    UIView *preview = SGRPlayerMotionPreview(^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (sg_cardArtwork == weakArtwork && [SGURIString(SGPlayerState().track.URI) isEqualToString:requestedTrack]) updateMiniMotion();
+        });
+    });
+    if (!preview) return;
+    preview.userInteractionEnabled = NO;
+    preview.accessibilityElementsHidden = YES;
+    preview.frame = artwork.bounds;
+    preview.layer.cornerRadius = artwork.bounds.size.width / 2;
+    preview.clipsToBounds = YES;
+    [artwork addSubview:preview];
+    sg_miniMotionView = preview;
 }
 
 // The strip's own pane, a strip high less the gaps, on the card's side the strip is on. It is measured from
@@ -497,6 +534,7 @@ static void styleNowPlayingBar(UIViewController *container) {
     if (card) {
         roundView(card, radius);
         restyleCardContent(card);
+        updateMiniMotion();
     }
 
     UIVisualEffectView *glass = SGGlassFor(container.view, &kGlassKey);
@@ -583,6 +621,9 @@ static void styleNowPlayingBar(UIViewController *container) {
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        dispatch_async(dispatch_get_main_queue(), ^{ updateMiniMotion(); });
+    }];
     SGRequireClasses(@[
         @"_TtC18NowPlaying_BarImpl36NowPlayingBarContainerViewController",
         @"_TtC18NowPlaying_BarImpl27NowPlayingBarViewController",

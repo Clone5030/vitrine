@@ -22,6 +22,7 @@
 #import "Settings/SGModPage.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Player.h"
+#import "Shared/AutoMix/AutoMix.h"
 
 // Past the plane's edges: above for the pull that dismisses the player, below for the bounce at the end
 // of the cards.
@@ -86,7 +87,8 @@ static void followCover(UIImage *image, NSString *identity) {
 static void showArtwork(SGRArtworkField *field, BOOL animated) {
     NSString *identity = nil;
     UIImage *image = SGRNowPlayingArtwork(NULL, &identity);
-    if (field && image) [field setArtwork:image identity:identity animated:animated];
+    BOOL artworkMoves = !SGFlag(SGKeyAutoMix, NO) || SGFlag(SGKeyAutoMixArtwork, NO);
+    if (field && image) [field setArtwork:image identity:identity animated:animated && artworkMoves];
     followCover(image, identity);
 }
 

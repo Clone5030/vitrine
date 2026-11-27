@@ -1,12 +1,11 @@
-// The Mixing pill: a small glass capsule over the right end of the player's timeline while AutoMix is blending the
-// playing song into the next (Shared/AutoMix/SmartMix.m says when). It belongs to the duration unit's view, above the
-// slider, and fades in and out; it takes no touches. Where the unit's view clips, it sits inside the view's top edge.
+// The transition status capsule above the player's timeline: a countdown until the AutoMix window, then Mixing.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/AutoMix/AutoMix.h"
 #import "Player.h"
 
 static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
+static char kPillKey, kGlassKey;
 
 @interface SGRMixingPill : UIView
 @end
@@ -14,6 +13,8 @@ static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
 @implementation SGRMixingPill {
     UIImageView *_icon;
     UILabel *_label;
+    UISlider *_slider;
+    UIView *_range;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -26,7 +27,6 @@ static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
     _icon.tintColor = SGRPrimary();
     [self addSubview:_icon];
     _label = [UILabel new];
-    _label.text = @"Mixing";
     _label.font = SGRFont(UIFontTextStyleCaption1, UIFontWeightSemibold, UIContentSizeCategoryAccessibilityMedium);
     _label.textColor = SGRPrimary();
     [self addSubview:_label];
@@ -44,40 +44,87 @@ static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
     [super layoutSubviews];
     _icon.frame = CGRectMake(kPillPad, (kPillHeight - 14) / 2, 14, 14);
     _label.frame = CGRectMake(CGRectGetMaxX(_icon.frame) + kPillGap, 0, _label.bounds.size.width, kPillHeight);
+    BOOL showProgress = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixProgress, NO) && _slider && SGAutoMixPlannedSeconds() > 0;
+    if (showProgress) {
+        double duration = SGPlayerState().duration;
+        CGFloat share = duration > 0 ? MIN(1, SGAutoMixPlannedSeconds() / duration) : 0;
+        CGRect track = [_slider trackRectForBounds:_slider.bounds];
+        CGRect thumb = [_slider thumbRectForBounds:_slider.bounds trackRect:track value:_slider.maximumValue];
+        CGFloat end = CGRectGetMidX(thumb);
+        thumb = [_slider thumbRectForBounds:_slider.bounds trackRect:track value:_slider.minimumValue];
+        CGFloat begin = CGRectGetMidX(thumb);
+        CGRect segment = CGRectMake(end - (end - begin) * share, CGRectGetMidY(track) - 1.5, (end - begin) * share, 3);
+        if (!_range) { _range = [UIView new]; _range.backgroundColor = SGRPrimary(); _range.alpha = 0.8; _range.userInteractionEnabled = NO; [self.superview insertSubview:_range belowSubview:self]; }
+        _range.frame = [_slider.superview convertRect:segment toView:self.superview];
+        _range.layer.cornerRadius = 1.5;
+        _range.hidden = NO;
+    } else {
+        _range.hidden = YES;
+    }
 }
+
+- (void)updateStatus {
+    double until = SGAutoMixSecondsUntilStart();
+    BOOL mixing = SGAutoMixMixing();
+    BOOL status = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixStatus, NO);
+    BOOL pill = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixPill, NO);
+    SPTPlayerState *state = SGPlayerState();
+    NSInteger seconds = MAX(0, (NSInteger)ceil(until));
+    NSString *countdown = [NSString stringWithFormat:@"%ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
+    NSInteger start = state && state.duration > 0 ? MAX(0, (NSInteger)round(state.duration - SGAutoMixPlannedSeconds())) : 0;
+    NSInteger end = start + (NSInteger)round(SGAutoMixPlannedSeconds());
+    NSString *window = [NSString stringWithFormat:@"%ld:%02ld–%ld:%02ld", (long)(start / 60), (long)(start % 60), (long)(end / 60), (long)(end % 60)];
+    _label.text = status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @"");
+    [_label sizeToFit];
+    self.accessibilityLabel = mixing ? @"Mixing into the next song" : (until < 0 ? @"No upcoming mix" : [NSString stringWithFormat:@"Next mix starts in %ld seconds", (long)seconds]);
+    BOOL visible = (status && (mixing || until >= 0)) || (pill && mixing);
+    CGFloat alpha = visible ? 1 : 0;
+    if (fabs(self.alpha - alpha) > 0.01) {
+        if (SGRReduceMotion()) self.alpha = alpha;
+        else [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{ self.alpha = alpha; } completion:nil];
+    }
+    if (self.superview) {
+        CGFloat right = CGRectGetMaxX(self.frame);
+        CGSize size = [self sizeThatFits:CGSizeZero];
+        if (fabs(self.bounds.size.width - size.width) > 0.5) {
+            self.frame = CGRectMake(right - size.width, self.frame.origin.y, size.width, size.height);
+            SGRGlassCapsuleInside(self, &kGlassKey, size, NO);
+        }
+    }
+    [self setNeedsLayout];
+}
+
+- (void)setSlider:(UISlider *)slider { _slider = slider; [self setNeedsLayout]; }
+- (void)removeRange { [_range removeFromSuperview]; _range = nil; }
 
 @end
 
-static char kPillKey, kGlassKey;
 static __weak SGRMixingPill *sg_pill;   // the player has one duration unit on screen at a time
-
-static void setShown(SGRMixingPill *pill, BOOL shown) {
-    if (SGRReduceMotion()) { pill.alpha = shown ? 1 : 0; return; }
-    [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
-                     animations:^{ pill.alpha = shown ? 1 : 0; } completion:nil];
-}
 
 // Called with every pass of the duration unit's layout: puts the pill over the slider's right end.
 void SGRMixingPlace(UIView *host, UISlider *slider) {
     SGRMixingPill *pill = objc_getAssociatedObject(host, &kPillKey);
-    if (!SGFlag(SGKeyAutoMix, NO) || !SGFlag(SGKeyAutoMixPill, YES)) { [pill removeFromSuperview]; objc_setAssociatedObject(host, &kPillKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); return; }
+    BOOL needed = SGFlag(SGKeyAutoMix, NO) && (SGFlag(SGKeyAutoMixPill, NO) || SGFlag(SGKeyAutoMixStatus, NO) || SGFlag(SGKeyAutoMixProgress, NO));
+    if (!needed) { [pill removeRange]; [pill removeFromSuperview]; objc_setAssociatedObject(host, &kPillKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); return; }
     if (!pill) {
         pill = [SGRMixingPill new];
         objc_setAssociatedObject(host, &kPillKey, pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         sg_pill = pill;
-        pill.alpha = SGAutoMixMixing() ? 1 : 0;
+        pill.alpha = 0;
         static dispatch_once_t once;
         dispatch_once(&once, ^{
             // Posted on the main thread; the pill in use is the latest made.
             [NSNotificationCenter.defaultCenter addObserverForName:SGAutoMixMixingDidChangeNotification object:nil queue:nil
                                                         usingBlock:^(NSNotification *n) {
-                dispatch_async(dispatch_get_main_queue(), ^{ if (sg_pill) setShown(sg_pill, SGAutoMixMixing()); });
+                dispatch_async(dispatch_get_main_queue(), ^{ [sg_pill updateStatus]; });
             }];
         });
     }
     if (pill.superview != host) [host addSubview:pill];
     else if (host.subviews.lastObject != pill) [host bringSubviewToFront:pill];
+    [pill updateStatus];
     CGSize size = [pill sizeThatFits:CGSizeZero];
+    [pill setSlider:slider];
     CGRect bar = slider ? [host convertRect:slider.bounds fromView:slider] : CGRectMake(0, kPillHeight + kPillGap, host.bounds.size.width, 0);
     CGFloat y = MAX(0, CGRectGetMinY(bar) - size.height - kPillGap);
     pill.frame = CGRectMake(CGRectGetMaxX(bar) - size.width, y, size.width, size.height);
