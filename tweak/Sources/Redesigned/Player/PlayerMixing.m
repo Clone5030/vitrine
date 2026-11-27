@@ -2,6 +2,7 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/AutoMix/AutoMix.h"
+#import "Shared/Sing/Sing.h"
 #import "Player.h"
 
 static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
@@ -66,6 +67,7 @@ static char kPillKey, kGlassKey;
 - (void)updateStatus {
     double until = SGAutoMixSecondsUntilStart();
     BOOL mixing = SGAutoMixMixing();
+    BOOL singing = SGFlag(SGKeySing, NO) && SGRPlayerLyricsOpen();
     BOOL status = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixStatus, NO);
     BOOL pill = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixPill, NO);
     SPTPlayerState *state = SGPlayerState();
@@ -74,10 +76,27 @@ static char kPillKey, kGlassKey;
     NSInteger start = state && state.duration > 0 ? MAX(0, (NSInteger)round(state.duration - SGAutoMixPlannedSeconds())) : 0;
     NSInteger end = start + (NSInteger)round(SGAutoMixPlannedSeconds());
     NSString *window = [NSString stringWithFormat:@"%ld:%02ld–%ld:%02ld", (long)(start / 60), (long)(start % 60), (long)(end / 60), (long)(end % 60)];
-    _label.text = status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @"");
+    _label.text = singing ? @"Sing" : (status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @""));
     [_label sizeToFit];
     self.accessibilityLabel = mixing ? @"Mixing into the next song" : (until < 0 ? @"No upcoming mix" : [NSString stringWithFormat:@"Next mix starts in %ld seconds", (long)seconds]);
-    BOOL visible = (status && (mixing || until >= 0)) || (pill && mixing);
+    BOOL visible = singing || (status && (mixing || until >= 0)) || (pill && mixing);
+    if (mixing && !SGRReduceMotion()) {
+        if (![self.layer animationForKey:@"sgr.mixing.glow"]) {
+            CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
+            glow.fromValue = @0.12;
+            glow.toValue = @0.85;
+            glow.duration = 0.9;
+            glow.autoreverses = YES;
+            glow.repeatCount = HUGE_VALF;
+            self.layer.shadowColor = SGRPrimary().CGColor;
+            self.layer.shadowRadius = 8;
+            self.layer.shadowOffset = CGSizeZero;
+            [self.layer addAnimation:glow forKey:@"sgr.mixing.glow"];
+        }
+    } else {
+        [self.layer removeAnimationForKey:@"sgr.mixing.glow"];
+        self.layer.shadowOpacity = 0;
+    }
     CGFloat alpha = visible ? 1 : 0;
     if (fabs(self.alpha - alpha) > 0.01) {
         if (SGRReduceMotion()) self.alpha = alpha;
@@ -129,7 +148,7 @@ void SGRMixingPlace(UIView *host, UISlider *slider) {
     CGSize size = [pill sizeThatFits:CGSizeZero];
     [pill setSlider:slider];
     CGRect bar = slider ? [host convertRect:slider.bounds fromView:slider] : CGRectMake(0, kPillHeight + kPillGap, host.bounds.size.width, 0);
-    CGFloat y = MAX(0, CGRectGetMinY(bar) - size.height - kPillGap);
+    CGFloat y = MIN(host.bounds.size.height - size.height, CGRectGetMaxY(bar) + 5);
     pill.frame = CGRectMake(CGRectGetMaxX(bar) - size.width, y, size.width, size.height);
     SGRGlassCapsuleInside(pill, &kGlassKey, size, NO);
 }
