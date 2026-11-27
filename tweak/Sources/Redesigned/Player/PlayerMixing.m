@@ -103,6 +103,9 @@ static __weak SGRMixingPill *sg_pill;   // the player has one duration unit on s
 
 // Called with every pass of the duration unit's layout: puts the pill over the slider's right end.
 void SGRMixingPlace(UIView *host, UISlider *slider) {
+    // Spotify's progress-bar identifier can belong to a non-slider wrapper on some builds.
+    // Never send UISlider-only messages (including bounds) to that cached view.
+    if (![slider isKindOfClass:UISlider.class]) slider = nil;
     SGRMixingPill *pill = objc_getAssociatedObject(host, &kPillKey);
     BOOL needed = SGFlag(SGKeyAutoMix, NO) && (SGFlag(SGKeyAutoMixPill, NO) || SGFlag(SGKeyAutoMixStatus, NO) || SGFlag(SGKeyAutoMixProgress, NO));
     if (!needed) { [pill removeRange]; [pill removeFromSuperview]; objc_setAssociatedObject(host, &kPillKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); return; }
@@ -130,3 +133,4 @@ void SGRMixingPlace(UIView *host, UISlider *slider) {
     pill.frame = CGRectMake(CGRectGetMaxX(bar) - size.width, y, size.width, size.height);
     SGRGlassCapsuleInside(pill, &kGlassKey, size, NO);
 }
+
