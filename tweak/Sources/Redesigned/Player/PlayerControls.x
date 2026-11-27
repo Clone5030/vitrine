@@ -369,8 +369,9 @@ static void seekTo(UISlider *slider, CGFloat share) {
 @end
 
 static void watchSlider(UIView *host) {
-    UISlider *slider = (UISlider *)SGRFindByIdentifier(host, @"SPTNowPlayingSliderV2", &kSliderKey);
-    if (![slider isKindOfClass:UISlider.class]) return;
+    UIView *found = SGRFindByIdentifier(host, @"SPTNowPlayingSliderV2", &kSliderKey);
+    if (![found isKindOfClass:UISlider.class]) return;
+    UISlider *slider = (UISlider *)found;
     SGRSeekTap *tap = objc_getAssociatedObject(host, &kSeekTapKey);
     if (!tap) {
         tap = [[SGRSeekTap alloc] initWithTarget:nil action:nil];
@@ -393,7 +394,8 @@ static void durationLaidOut(UIViewController *unit) {
     UIView *host = unit.viewIfLoaded;
     if (!host) return;
     watchSlider(host);
-    SGRMixingPlace(host, objc_getAssociatedObject(host, &kSliderKey));
+    UIView *found = SGRFindByIdentifier(host, @"SPTNowPlayingSliderV2", &kSliderKey);
+    SGRMixingPlace(host, [found isKindOfClass:UISlider.class] ? (UISlider *)found : nil);
     UILabel *taken = monospaced(host, @"now-playing-time-take-label-internal", &kTakeKey);
     monospaced(host, @"now-playing-time-remaning-label-internal", &kRemainingKey);
     // Whether Spotify's font has digits of one width shows in the descriptor's feature settings.
@@ -434,3 +436,4 @@ static void durationLaidOut(UIViewController *unit) {
         @"_TtCO17NowPlaying_ECMKit11ProgressBar6Slider",
     ]);
 }
+
