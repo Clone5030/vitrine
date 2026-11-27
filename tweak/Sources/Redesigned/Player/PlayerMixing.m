@@ -76,8 +76,12 @@ static char kPillKey, kGlassKey;
     NSInteger start = state && state.duration > 0 ? MAX(0, (NSInteger)round(state.duration - SGAutoMixPlannedSeconds())) : 0;
     NSInteger end = start + (NSInteger)round(SGAutoMixPlannedSeconds());
     NSString *window = [NSString stringWithFormat:@"%ld:%02ld–%ld:%02ld", (long)(start / 60), (long)(start % 60), (long)(end / 60), (long)(end % 60)];
-    _label.text = singing ? @"Sing" : (status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @""));
-    [_label sizeToFit];
+    NSString *text = singing ? @"Sing" : (status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @""));
+    BOOL textChanged = ![_label.text isEqualToString:text];
+    if (textChanged) {
+        _label.text = text;
+        [_label sizeToFit];
+    }
     self.accessibilityLabel = mixing ? @"Mixing into the next song" : (until < 0 ? @"No upcoming mix" : [NSString stringWithFormat:@"Next mix starts in %ld seconds", (long)seconds]);
     BOOL visible = singing || (status && (mixing || until >= 0)) || (pill && mixing);
     if (mixing && !SGRReduceMotion()) {
@@ -110,7 +114,7 @@ static char kPillKey, kGlassKey;
             SGRGlassCapsuleInside(self, &kGlassKey, size, NO);
         }
     }
-    [self setNeedsLayout];
+    if (textChanged) [self setNeedsLayout];
 }
 
 - (void)setSlider:(UISlider *)slider { _slider = slider; [self setNeedsLayout]; }
