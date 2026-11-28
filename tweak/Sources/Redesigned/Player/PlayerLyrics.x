@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 11525)
+Total output lines: 940
+
 // Player redesign: the lyrics come to the player itself, the way the Music app shows them. The player
 // is one screen and does not scroll (PlayerScroll.x), so the footer's lyrics glyph is the only way to
 // them: it shrinks the cover into a thumbnail at the top of the artwork band, lifts the track's title
@@ -277,296 +280,7 @@ BOOL SGRPlayerLyricsOpen(void) {
 // Puts the overlay's own views where the measurements say, without animating. The thumbnail is laid out
 // at the size and place Spotify draws its cover at and moved by its transform alone, so a pass that
 // runs while it is up leaves it exactly where the eye has it: the two are worked out from one
-// measurement. Bounds and a center, not a frame, since both views can be under a transform.
-static void place(SGRPlayerLyricsOverlay *overlay, UIView *host, SGRLyricsLayout l) {
-    overlay.frame = CGRectUnion(l.cover, CGRectUnion(l.thumb, l.stage));
-    CGRect cover = [overlay convertRect:l.cover fromView:host], stage = [overlay convertRect:l.stage fromView:host];
-    overlay.thumb.bounds = (CGRect){CGPointZero, cover.size};
-    overlay.thumb.center = CGPointMake(CGRectGetMidX(cover), CGRectGetMidY(cover));
-    overlay.cover.frame = overlay.thumb.bounds;
-    SGRShadowPlate *plate = SGRShadowPlateIn(overlay.thumb, &kPlateKey);
-    plate.bounds = overlay.thumb.bounds;
-    plate.center = CGPointMake(CGRectGetMidX(overlay.thumb.bounds), CGRectGetMidY(overlay.thumb.bounds));
-    overlay.stage.bounds = (CGRect){CGPointZero, stage.size};
-    overlay.stage.center = CGPointMake(CGRectGetMidX(stage), CGRectGetMidY(stage));
-}
-
-// Where the thumbnail's view has to go to land on `l.thumb`, as a transform about its own center: the
-// shadow and the corners travel with it that way, instead of a shadow redrawn on every frame.
-static CGAffineTransform thumbTransform(SGRLyricsLayout l) {
-    CGFloat scale = l.cover.size.width > 0 ? l.thumb.size.width / l.cover.size.width : 1;
-    CGAffineTransform move = CGAffineTransformMakeTranslation(round(CGRectGetMidX(l.thumb) - CGRectGetMidX(l.cover)),
-                                                             round(CGRectGetMidY(l.thumb) - CGRectGetMidY(l.cover)));
-    return CGAffineTransformConcat(CGAffineTransformMakeScale(scale, scale), move);
-}
-
-// The corners as they will be drawn: a radius under a scale is drawn scaled, so the thumbnail asks for
-// the radius it wants divided by the shrink, and the two ends of the animation are 12pt and 8pt corners.
-static CGFloat thumbRadius(SGRLyricsLayout l, BOOL open) {
-    if (!open) return SGRRadiusArtwork;
-    CGFloat scale = l.cover.size.width > 0 ? l.thumb.size.width / l.cover.size.width : 1;
-    return scale > 0 ? SGRRadiusCover / scale : SGRRadiusArtwork;
-}
-
-#pragma mark - the lines on their own
-
-// After kRest without a touch while the song plays, everything but the lines fades -- the header row, the
-// thumbnail, the title row and the controls -- and the lines grow up and down into the whole safe area, the
-// way the Music app leaves its lyrics alone. The lines scroll as they always do and leave the rest hidden; a
-// tap anywhere brings it all back and is not a seek. A pause brings it back and keeps it; VoiceOver, a sheet
-// over the player and the app in the background keep it up. A scroll through the lines hides it at once.
-// Sing's mic stays with the lines, and a touch on it is the mic's: it does not bring the rest back.
-//
-// The tap is a recognizer on the player that recognizes with any other, and a button takes its own tap:
-// UIKit gives a control its tap over a tap recognizer above it. A faded view takes no touch (UIKit's hit
-// test skips it), so a tap where the thumbnail or a button was only wakes. A drag or a second finger fails
-// it. The lines' own tap, the one that seeks, is off while they are alone, which holds whichever of the two
-// would have finished first.
-
-// What fades: every view of Spotify's bottom stack but the chips (gone while the lines are up), which is the
-// title row, the progress bar, the buttons, the footer and a volume row where the phone has one; the header
-// row's unit; and the thumbnail. Each fades by its alpha and the stack is left alone. Without the stack, the
-// units by name. Only views on screen are taken, and only the ones faded (sg_faded) come back, so nothing
-// Spotify keeps hidden is shown.
-static NSHashTable<UIView *> *sg_faded;
-
-static NSArray<UIView *> *fadingViews(void) {
-    UIView *floating = sg_floating.viewIfLoaded;
-    NSMutableArray<UIView *> *views = [NSMutableArray array];
-    SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(sg_host, &kOverlayKey);
-    UIView *header = sg_header.viewIfLoaded, *thumb = overlay.thumb;
-    if (header && !header.hidden && header.alpha > 0.01) [views addObject:header];
-    if (thumb && !thumb.hidden && thumb.alpha > 0.01) [views addObject:thumb];
-    UIView *stack = SGRFindByIdentifier(sg_host, @"npv.bottomStackView", &kStackKey);
-    if (stack) {
-        for (UIView *view in stack.subviews) {
-            if ([floating isDescendantOfView:view]) continue;
-            if (!view.hidden && view.alpha > 0.01) [views addObject:view];
-        }
-        return views;
-    }
-    static NSArray<NSString *> *names;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        names = @[@"InformationElementsUnit", @"DurationElementUnit", @"PlaybackControlsElementsUnit", @"FooterElementsUnit"];
-    });
-    // A unit's view answers to its controller as its next responder, wherever the unit sits in the tree.
-    SGForEachView(sg_host, ^(UIView *view) {
-        UIResponder *owner = view.nextResponder;
-        if (![owner isKindOfClass:UIViewController.class] || ((UIViewController *)owner).viewIfLoaded != view) return;
-        NSString *name = NSStringFromClass(owner.class);
-        for (NSString *unit in names) {
-            if ([name hasSuffix:unit] && !view.hidden && view.alpha > 0.01) [views addObject:view];
-        }
-    });
-    return views;
-}
-
-static void fadeControls(BOOL faded) {
-    if (!sg_faded) sg_faded = [NSHashTable weakObjectsHashTable];
-    if (faded) {
-        for (UIView *view in fadingViews()) {
-            view.alpha = 0;
-            [sg_faded addObject:view];
-        }
-    } else {
-        for (UIView *view in sg_faded) view.alpha = 1;
-        [sg_faded removeAllObjects];
-    }
-}
-
-// Where the lines go on their own: the whole safe area, kLyricsBottom in at both ends, over everything that
-// faded. The safe area keeps them from under the status bar and the Dynamic Island.
-static CGRect aloneStage(UIView *host, SGRLyricsLayout l) {
-    CGRect safe = UIEdgeInsetsInsetRect(host.bounds, host.safeAreaInsets);
-    CGFloat top = CGRectGetMinY(safe) + kLyricsBottom;
-    return CGRectMake(CGRectGetMinX(l.stage), top, l.stage.size.width, CGRectGetMaxY(safe) - kLyricsBottom - top);
-}
-
-// The lines' tap seeks, so it is off while they are alone. Back on a turn of the run loop later: the tap
-// that brought the controls back is still being handed round, and must not reach it.
-static void letLinesSeek(SGRPlayerLyricsOverlay *overlay, BOOL seek) {
-    void (^apply)(void) = ^{
-        if (seek == sg_alone) return;   // alone again since
-        for (UIGestureRecognizer *recognizer in overlay.lyrics.gestureRecognizers) {
-            if ([recognizer isKindOfClass:UITapGestureRecognizer.class]) recognizer.enabled = seek;
-        }
-    };
-    if (seek) dispatch_async(dispatch_get_main_queue(), apply);
-    else apply();
-}
-
-static void setAlone(BOOL alone, BOOL animated);
-
-// A sheet, a menu or an alert over the player: the top controller on screen is not one the player is drawn
-// in. The queue, devices and ⋯ sheets can be presented from the player's topmost parent rather than the
-// player, which the player's own presentedViewController would miss, and Sing's explanation is an alert on
-// the top controller (SGRSingButton.m).
-static BOOL coveredBySheet(void) {
-    UIViewController *top = SGTopController();
-    UIView *host = sg_host;
-    if (!top.viewIfLoaded || !host || [host isDescendantOfView:top.viewIfLoaded]) return NO;
-    static NSUInteger logged;
-    if (logged++ < 3) SGLog(@"redesign player: %@ over the player keeps the controls up", NSStringFromClass(top.class));
-    return YES;
-}
-
-// Whether the clock runs: the lines up with the controls, the song playing with the app in front, no finger
-// on the player and VoiceOver off (which keeps the controls up, and starts the clock again when it goes).
-static BOOL mayCount(void) {
-    SPTPlayerState *state = SGPlayerState();
-    UIView *host = sg_host;
-    return SGEnabled(SGRKeyLyricsAutoHide) && sg_open && !sg_alone && !sg_touching && host.window && state && !state.isPaused
-        && !UIAccessibilityIsVoiceOverRunning()
-        && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-}
-
-// Whether the controls may fade as it runs out: not under a sheet, nor while Sing gets ready.
-static BOOL mayRest(void) {
-    return mayCount() && !coveredBySheet() && SGSingCurrentState() != SGSingStatePreparing;
-}
-
-// The clock starts again at every touch. Run out while something keeps the controls up (a sheet, Sing getting
-// ready, lines still being measured), it starts over, so they fade once that has gone.
-static void restartRest(void) {
-    [sg_rest invalidate];
-    sg_rest = nil;
-    if (!mayCount()) return;
-    sg_rest = [NSTimer scheduledTimerWithTimeInterval:kRest repeats:NO block:^(NSTimer *timer) {
-        sg_rest = nil;
-        if (mayRest()) setAlone(YES, YES);
-        if (!sg_alone) restartRest();
-    }];
-}
-
-@interface SGRPlayerTouchWatcher : UIGestureRecognizer <UIGestureRecognizerDelegate>
-@end
-
-// Sees every touch on the player and takes none. It never recognizes: it holds the clock while a finger is
-// down, so a hold on Sing's slider that runs past the rest fades nothing under it, and starts the clock once
-// the last finger lifts. Nothing can end its watch early, or a scroll or a hold that recognized would start
-// the clock under the finger.
-@implementation SGRPlayerTouchWatcher
-- (instancetype)init {
-    if (!(self = [super initWithTarget:nil action:nil])) return nil;
-    self.delegate = self;
-    self.cancelsTouchesInView = NO;
-    self.delaysTouchesBegan = NO;
-    self.delaysTouchesEnded = NO;
-    return self;
-}
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
-    return YES;
-}
-- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)other {
-    return NO;
-}
-- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other {
-    return NO;
-}
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    sg_touching = YES;
-    [sg_rest invalidate];
-    sg_rest = nil;
-}
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self lifted:event];
-}
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self lifted:event];
-}
-- (void)lifted:(UIEvent *)event {
-    for (UITouch *touch in [event touchesForGestureRecognizer:self]) {
-        if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return;
-    }
-    self.state = UIGestureRecognizerStateFailed;
-}
-// After the last finger, or the watch ended any other way.
-- (void)reset {
-    [super reset];
-    if (!sg_touching) return;
-    sg_touching = NO;
-    if (!sg_alone) restartRest();
-}
-@end
-
-@interface SGRPlayerWake : UITapGestureRecognizer <UIGestureRecognizerDelegate>
-@end
-
-// Takes no touch from anything under it, and lets every other recognizer have the same tap.
-@implementation SGRPlayerWake
-- (instancetype)init {
-    if (!(self = [super initWithTarget:nil action:nil])) return nil;
-    [self addTarget:self action:@selector(sgr_woke)];
-    self.delegate = self;
-    self.cancelsTouchesInView = NO;
-    self.delaysTouchesEnded = NO;
-    self.enabled = NO;
-    return self;
-}
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
-    return YES;
-}
-// Sing's mic and its slider stay while the lines are alone, and a touch on them is theirs alone.
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
-    for (UIView *v = touch.view; v; v = v.superview) {
-        if ([v isKindOfClass:SGRSingButton.class]) return NO;
-    }
-    return YES;
-}
-- (void)sgr_woke {
-    setAlone(NO, YES);
-    restartRest();
-}
-@end
-
-static void setAlone(BOOL alone, BOOL animated) {
-    UIView *host = sg_host;
-    if (alone == sg_alone || !host || (alone && !sg_open)) return;
-    SGRLyricsLayout l = layoutIn(host);
-    // Going alone needs somewhere to put the lines. Coming back never waits for it: the controls and the
-    // lines' tap are given back even when the player can no longer be measured.
-    if (alone && !l.ok) return;
-    sg_alone = alone;
-    if (alone) {
-        [sg_rest invalidate];
-        sg_rest = nil;
-        l.stage = aloneStage(host, l);
-    }
-    SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(host, &kOverlayKey);
-    // Layout and opacity have their own timing; Reduce Motion dissolves the layout in place.
-    void (^move)(void) = ^{
-        if (!overlay.superview || !l.ok) return;
-        place(overlay, host, l);
-        overlay.thumb.transform = thumbTransform(l);
-        // The lines take the new height in this same spring, so the sung line rides with the stage rather than
-        // springing to the new anchor at the next line (SGRKaraokeView's layoutSubviews).
-        [overlay.lyrics layoutIfNeeded];
-    };
-    void (^fade)(void) = ^{
-        if (overlay.superview) overlay.lyrics.extrasHidden = alone;
-        fadeControls(alone);
-    };
-    sg_wake.enabled = alone;
-    if (overlay) letLinesSeek(overlay, !alone);
-    if (animated) {
-        SGRAnimateLayout(host, move, nil);
-        // Going, the controls take their time, since nobody waits on them; coming back at a touch, they answer at
-        // once, from wherever the fade out has got to.
-        SGRAnimate(alone ? SGRMotionFade : SGRMotionRespond, fade, nil);
-    } else {
-        move();
-        fade();
-    }
-    SGLog(@"redesign player: the lines %@", alone ? @"on their own" : @"with the controls");
-}
-
-static void setOpen(BOOL open, BOOL animated) {
-    UIView *host = sg_host;
-    if (open == sg_open) return;
-    if (!host) {
-        SGLog(@"redesign player: the lyrics were asked for before the player laid out");
-        return;
+// measurement. Bounds and a center, not a frame, since both…3525 tokens truncated…return;
     }
     SGRLyricsLayout l = layoutIn(host);
     if (open && !l.ok) {
@@ -582,6 +296,7 @@ static void setOpen(BOOL open, BOOL animated) {
     }
     if (!open) setAlone(NO, NO);
     sg_open = open;
+    SGRMixingRefresh();
     SGRPlayerLyricsChanged();
 
     SGRPlayerLyricsOverlay *overlay = overlayIn(host);
@@ -619,7 +334,8 @@ static void setOpen(BOOL open, BOOL animated) {
     };
     void (^fade)(void) = ^{
         overlay.thumb.alpha = !open && fades ? 0 : 1;
-        sg_floating.viewIfLoaded.alpha = open ? 0 : 1;
+        // Keep Spotify's floating action chips (including Switch to video) reachable above the lyrics.
+        sg_floating.viewIfLoaded.alpha = 1;
     };
     void (^show)(void) = ^{
         overlay.stage.alpha = open ? 1 : 0;
@@ -674,7 +390,8 @@ static void replace(void) {
     SGRLyricsLayout l = layoutIn(host);
     if (sg_open && !l.ok) return;
     placeTitleRow(l);
-    sg_floating.viewIfLoaded.alpha = sg_open ? 0 : 1;
+    // Keep Spotify's floating action chips (including Switch to video) reachable above the lyrics.
+    sg_floating.viewIfLoaded.alpha = 1;
     if (!sg_open) return;
     SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(host, &kOverlayKey);
     if (!overlay.superview) return;
@@ -730,7 +447,14 @@ static void informationUnitLaidOut(UIViewController *unit) {
         if ([v.superview isKindOfClass:UIStackView.class]) { element = v; break; }
     }
     if (element && sg_titleElement != element) {
+        UIView *oldTitle = sg_titleElement;
+        oldTitle.transform = CGAffineTransformIdentity;
+        oldTitle.layer.mask = nil;
         sg_titleElement = element;
+        // Spotify replaces the arranged title element on track changes. Do not carry the old
+        // lyrics-open horizontal offset into the newly-created row before measuring it.
+        element.transform = CGAffineTransformIdentity;
+        element.layer.mask = nil;
         static dispatch_once_t once;
         dispatch_once(&once, ^{ SGLog(@"redesign player: the title rides on %@ %@", NSStringFromClass(element.class), NSStringFromCGRect(element.frame)); });
     }
@@ -927,3 +651,4 @@ BOOL SGRPlayerLyricsNone(void) {
         @"_TtC20NowPlaying_ModesImpl18HeaderElementsUnit",
     ]);
 }
+
