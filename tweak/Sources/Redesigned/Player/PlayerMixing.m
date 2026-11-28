@@ -2,17 +2,15 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/AutoMix/AutoMix.h"
-#import "Shared/Sing/Sing.h"
 #import "Player.h"
 
-static const CGFloat kPillHeight = 26, kPillPad = 10, kPillGap = 4;
-static char kPillKey, kGlassKey;
+static const CGFloat kPillHeight = 22, kPillGap = 5;
+static char kPillKey;
 
 @interface SGRMixingPill : UIView
 @end
 
 @implementation SGRMixingPill {
-    UIImageView *_icon;
     UILabel *_label;
     UISlider *_slider;
     UIView *_range;
@@ -23,10 +21,6 @@ static char kPillKey, kGlassKey;
     self.userInteractionEnabled = NO;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.alpha = 0;
-    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightSemibold];
-    _icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"waveform" withConfiguration:config]];
-    _icon.tintColor = SGRPrimary();
-    [self addSubview:_icon];
     _label = [UILabel new];
     _label.font = SGRFont(UIFontTextStyleCaption1, UIFontWeightSemibold, UIContentSizeCategoryAccessibilityMedium);
     _label.textColor = SGRPrimary();
@@ -38,13 +32,12 @@ static char kPillKey, kGlassKey;
 
 - (CGSize)sizeThatFits:(CGSize)size {
     [_label sizeToFit];
-    return CGSizeMake(kPillPad + 14 + kPillGap + _label.bounds.size.width + kPillPad, kPillHeight);
+    return CGSizeMake(_label.bounds.size.width, kPillHeight);
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    _icon.frame = CGRectMake(kPillPad, (kPillHeight - 14) / 2, 14, 14);
-    _label.frame = CGRectMake(CGRectGetMaxX(_icon.frame) + kPillGap, 0, _label.bounds.size.width, kPillHeight);
+    _label.frame = self.bounds;
     BOOL showProgress = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixProgress, NO) && _slider && SGAutoMixPlannedSeconds() > 0;
     if (showProgress) {
         double duration = SGPlayerState().duration;
@@ -67,7 +60,7 @@ static char kPillKey, kGlassKey;
 - (void)updateStatus {
     double until = SGAutoMixSecondsUntilStart();
     BOOL mixing = SGAutoMixMixing();
-    BOOL singing = SGFlag(SGKeySing, NO) && SGRPlayerLyricsOpen();
+    BOOL singing = SGRPlayerLyricsOpen();
     BOOL status = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixStatus, NO);
     BOOL pill = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixPill, NO);
     SPTPlayerState *state = SGPlayerState();
@@ -107,11 +100,12 @@ static char kPillKey, kGlassKey;
         else [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{ self.alpha = alpha; } completion:nil];
     }
     if (self.superview) {
-        CGFloat right = CGRectGetMaxX(self.frame);
         CGSize size = [self sizeThatFits:CGSizeZero];
         if (fabs(self.bounds.size.width - size.width) > 0.5) {
-            self.frame = CGRectMake(right - size.width, self.frame.origin.y, size.width, size.height);
-            SGRGlassCapsuleInside(self, &kGlassKey, size, NO);
+            CGRect frame = self.frame;
+            frame.size = size;
+            frame.origin.x = round((self.superview.bounds.size.width - size.width) / 2);
+            self.frame = frame;
         }
     }
     if (textChanged) [self setNeedsLayout];
@@ -123,6 +117,10 @@ static char kPillKey, kGlassKey;
 @end
 
 static __weak SGRMixingPill *sg_pill;   // the player has one duration unit on screen at a time
+
+void SGRMixingRefresh(void) {
+    [sg_pill updateStatus];
+}
 
 // Called with every pass of the duration unit's layout: puts the pill over the slider's right end.
 void SGRMixingPlace(UIView *host, UISlider *slider) {
@@ -153,7 +151,6 @@ void SGRMixingPlace(UIView *host, UISlider *slider) {
     [pill setSlider:slider];
     CGRect bar = slider ? [host convertRect:slider.bounds fromView:slider] : CGRectMake(0, kPillHeight + kPillGap, host.bounds.size.width, 0);
     CGFloat y = MIN(host.bounds.size.height - size.height, CGRectGetMaxY(bar) + 5);
-    pill.frame = CGRectMake(CGRectGetMaxX(bar) - size.width, y, size.width, size.height);
-    SGRGlassCapsuleInside(pill, &kGlassKey, size, NO);
+    pill.frame = CGRectMake(round((host.bounds.size.width - size.width) / 2), y, size.width, size.height);
 }
 
