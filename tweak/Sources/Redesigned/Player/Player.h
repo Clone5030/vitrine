@@ -211,3 +211,5 @@ void SGRPlayerMenuWatch(UIView *button);
 // The Mixing pill over the timeline's right end while AutoMix blends (PlayerMixing.m); called as the duration
 // unit lays out, with its view and its slider.
 void SGRMixingPlace(UIView *host, UISlider *slider);
+void SGRMixingRefresh(void);
+
