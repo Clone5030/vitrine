@@ -62,21 +62,20 @@ static char kPillKey;
     BOOL mixing = SGAutoMixMixing();
     BOOL singing = SGRPlayerLyricsOpen();
     BOOL status = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixStatus, NO);
-    BOOL pill = SGFlag(SGKeyAutoMix, NO) && SGFlag(SGKeyAutoMixPill, NO);
     SPTPlayerState *state = SGPlayerState();
     NSInteger seconds = MAX(0, (NSInteger)ceil(until));
     NSString *countdown = [NSString stringWithFormat:@"%ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
     NSInteger start = state && state.duration > 0 ? MAX(0, (NSInteger)round(state.duration - SGAutoMixPlannedSeconds())) : 0;
     NSInteger end = start + (NSInteger)round(SGAutoMixPlannedSeconds());
     NSString *window = [NSString stringWithFormat:@"%ld:%02ld–%ld:%02ld", (long)(start / 60), (long)(start % 60), (long)(end / 60), (long)(end % 60)];
-    NSString *text = singing ? @"Sing" : (status && (mixing || until >= 0) ? (mixing ? @"Mixing" : [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window]) : (pill && mixing ? @"Mixing" : @""));
+    NSString *text = mixing ? @"Mixing" : (singing ? @"Sing" : (status && until >= 0 ? [NSString stringWithFormat:@"AutoMix in %@ · %@", countdown, window] : @""));
     BOOL textChanged = ![_label.text isEqualToString:text];
     if (textChanged) {
         _label.text = text;
         [_label sizeToFit];
     }
     self.accessibilityLabel = mixing ? @"Mixing into the next song" : (until < 0 ? @"No upcoming mix" : [NSString stringWithFormat:@"Next mix starts in %ld seconds", (long)seconds]);
-    BOOL visible = singing || (status && (mixing || until >= 0)) || (pill && mixing);
+    BOOL visible = mixing || singing || (status && until >= 0);
     if (mixing && !SGRReduceMotion()) {
         if (![self.layer animationForKey:@"sgr.mixing.glow"]) {
             CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
